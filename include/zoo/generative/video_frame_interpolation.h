@@ -1,0 +1,8 @@
+//
+// Created by kami on 8/16/25.
+//
+
+#ifndef VIDEO_FRAME_INTERPOLATION_H
+#define VIDEO_FRAME_INTERPOLATION_H
+
+#endif //VIDEO_FRAME_INTERPOLATION_H

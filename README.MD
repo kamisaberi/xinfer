@@ -10,7 +10,7 @@
 
 It bridges the massive gap between training a model in a high-level framework and deploying it in a low-latency, production-grade C++ environment. `xInfer` automates the complex process of model optimization using NVIDIA TensorRT and provides a clean, elegant API for developers, hiding the extreme complexity of high-performance GPU programming.
 
-This library is the ideal companion to **[xTorch](https://github.com/your-username/xtorch)**, providing a seamless, end-to-end C++ workflow from training to hyper-performant deployment.
+This library is the ideal companion to **[xTorch](https://github.com/kamisaberi/xtorch)**, providing a seamless, end-to-end C++ workflow from training to hyper-performant deployment.
 
 ## The Problem: The Deployment Chasm
 

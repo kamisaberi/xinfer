@@ -1,0 +1,8 @@
+//
+// Created by kami on 8/16/25.
+//
+
+#ifndef LICENSE_PLATE_RECOGNIZER_H
+#define LICENSE_PLATE_RECOGNIZER_H
+
+#endif //LICENSE_PLATE_RECOGNIZER_H

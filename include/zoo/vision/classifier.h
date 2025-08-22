@@ -4,17 +4,16 @@
 #include <vector>
 #include <memory>
 #include <stdexcept>
-
 #include <opencv2/opencv.hpp> // For user-friendly cv::Mat inputs
 
 // --- Low-level xInfer components used internally ---
 // These are included here because the private members will hold them.
 // In a very large library, you might use the PIMPL idiom to hide these,
 // but for clarity, we include them here.
-#include <xinfer/core/engine.h>
-#include <xinfer/preproc/image_processor.h>
-#include <xinfer/builders/engine_builder.h>
-#include <xinfer/builders/onnx_exporter.h>
+#include "../../core/engine.h"
+#include "../../preproc/image_processor.h"
+#include "../../builders/engine_builder.h"
+#include "../../builders/onnx_exporter.h"
 
 // --- Dependency on xTorch for model definition ---
 // This class needs to know the architecture to load the weights

@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.28)
 project(xinfer)
 
+set(CMAKE_CUDA_ARCHITECTURES "75;86")
+set(CMAKE_CUDA_COMPILER /usr/local/cuda-12.8/bin/nvcc)
+
+
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 

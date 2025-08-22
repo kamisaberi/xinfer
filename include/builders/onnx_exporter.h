@@ -3,7 +3,8 @@
 
 #include <string>
 #include <vector>
-#include <xtorch/nn/module.h> // Dependency on xTorch's base module
+#include <xtorch/xtorch.h>
+// Dependency on xTorch's base module
 #include "engine_builder.h" // For InputSpec
 
 namespace xinfer::builders {

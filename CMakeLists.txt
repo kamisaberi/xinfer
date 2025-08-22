@@ -90,7 +90,7 @@ set(TEST_LIBRARIES ${CURL_LIBRARIES}
         OpenSSL::SSL
         OpenSSL::Crypto
         ZLIB::ZLIB
-#                ${ONNXRUNTIME_LIBRARY}
+       ${BUNDLED_ONNXRUNTIME_LIB_DIR}
         #        onnxruntime
         ONNX::Runtime
         ${LIBZIP_LIBRARIES}  # Add this line

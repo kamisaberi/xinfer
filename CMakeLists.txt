@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(xinfer LANGUAGES CXX CUDA)
+project(xinfer VERSION 1.0.0 LANGUAGES CXX CUDA) # THE FIX #1: Added VERSION 1.0.0
 
 set(CMAKE_CUDA_ARCHITECTURES "75;86")
 set(CMAKE_CUDA_COMPILER /usr/local/cuda-12.8/bin/nvcc)
@@ -90,7 +90,7 @@ set(TEST_LIBRARIES ${CURL_LIBRARIES}
         OpenSSL::SSL
         OpenSSL::Crypto
         ZLIB::ZLIB
-       ${BUNDLED_ONNXRUNTIME_LIB_DIR}
+        ${BUNDLED_ONNXRUNTIME_LIB_DIR}
         #        onnxruntime
         ONNX::Runtime
         ${LIBZIP_LIBRARIES}  # Add this line
@@ -102,8 +102,35 @@ set(TEST_LIBRARIES ${CURL_LIBRARIES}
 
 include_directories(SYSTEM ${CMAKE_SOURCE_DIR} /usr/include /usr/local/include ${TENSORRT_INCLUDE_DIR} ${BUNDLED_ONNXRUNTIME_INCLUDE_DIR})
 
-add_executable(xinfer main.cpp)
+# --- THE FIX #2: Changed from add_executable to add_library ---
+add_library(xinfer SHARED main.cpp) # Assuming main.cpp is a placeholder for your library sources
 target_link_libraries(xinfer PRIVATE xTorch::xTorch )
-set_property(TARGET xinfer PROPERTY CXX_STANDARD 17)
+
+# --- THE FIX #3: Changed from CXX_STANDARD to CUDA_STANDARD ---
+set_property(TARGET xinfer PROPERTY CUDA_STANDARD 17)
 target_include_directories(xinfer PRIVATE ${LIBTAR_INCLUDE_DIR} ${TORCH_INCLUDE_DIRS} ${LibArchive_INCLUDE_DIRS} ${XTORCH_INCLUDE_DIRS})
 
+# --- ADDED: The installation rules from before, which require the VERSION ---
+include(GNUInstallDirs)
+install(TARGETS xinfer
+        EXPORT xinfer-targets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT xinfer-targets
+        FILE xinfer-config.cmake
+        NAMESPACE xinfer::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xinfer
+)
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/xinfer-config-version.cmake"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY AnyNewerVersion
+)
+install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/xinfer-config-version.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xinfer
+)

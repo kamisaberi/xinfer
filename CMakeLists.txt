@@ -85,7 +85,7 @@ set(TEST_LIBRARIES ${CURL_LIBRARIES}
         OpenSSL::SSL
         OpenSSL::Crypto
         ZLIB::ZLIB
-        #        ${ONNXRUNTIME_LIBRARY}
+#                ${ONNXRUNTIME_LIBRARY}
         #        onnxruntime
         ONNX::Runtime
         ${LIBZIP_LIBRARIES}  # Add this line
@@ -98,7 +98,7 @@ set(TEST_LIBRARIES ${CURL_LIBRARIES}
 include_directories(SYSTEM ${CMAKE_SOURCE_DIR} /usr/include /usr/local/include ${TENSORRT_INCLUDE_DIR})
 
 add_executable(xinfer main.cpp)
-target_link_libraries(xinfer PRIVATE xTorch::xTorch)
+target_link_libraries(xinfer PRIVATE xTorch::xTorch )
 set_property(TARGET xinfer PROPERTY CXX_STANDARD 17)
 target_include_directories(xinfer PRIVATE ${LIBTAR_INCLUDE_DIR} ${TORCH_INCLUDE_DIRS} ${LibArchive_INCLUDE_DIRS} ${XTORCH_INCLUDE_DIRS})
 

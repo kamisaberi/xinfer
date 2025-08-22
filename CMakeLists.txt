@@ -95,7 +95,7 @@ set(TEST_LIBRARIES ${CURL_LIBRARIES}
 
 )
 
-include_directories(SYSTEM ${CMAKE_SOURCE_DIR} /usr/include /usr/local/include)
+include_directories(SYSTEM ${CMAKE_SOURCE_DIR} /usr/include /usr/local/include ${TENSORRT_INCLUDE_DIR})
 
 add_executable(xinfer main.cpp)
 target_link_libraries(xinfer PRIVATE xTorch::xTorch)

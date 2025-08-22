@@ -71,6 +71,8 @@ set(TEST_LIBRARIES ${CURL_LIBRARIES}
 
 )
 
+include_directories(SYSTEM ${CMAKE_SOURCE_DIR} /usr/include /usr/local/include)
+
 add_executable(xinfer main.cpp)
 target_link_libraries(xinfer PRIVATE xTorch::xTorch)
 set_property(TARGET xinfer PROPERTY CXX_STANDARD 17)

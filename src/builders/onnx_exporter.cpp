@@ -2,6 +2,7 @@
 
 #include <include/builders/onnx_exporter.h>
 #include <torch/onnx.h>
+#include  <onnxruntime_cxx_api.h>
 #include <iostream>
 #include <vector>
 

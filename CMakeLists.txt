@@ -52,6 +52,11 @@ if(xTorch_FOUND)
     else()
         message(FATAL_ERROR "Could not find the bundled libtorch directory at the expected path: ${BUNDLED_LIBTORCH_PATH}")
     endif()
+
+    set(BUNDLED_ONNXRUNTIME_PATH "${XTORCH_INSTALL_DIR}/include/xtorch/third_party/onnxruntime")
+    set(BUNDLED_ONNXRUNTIME_INCLUDE_DIR "${BUNDLED_ONNXRUNTIME_PATH}/include")
+    set(BUNDLED_ONNXRUNTIME_LIB_DIR "${BUNDLED_ONNXRUNTIME_PATH}/lib")
+
 endif()
 find_package(Torch REQUIRED)
 find_package(LibLZMA REQUIRED)
@@ -95,7 +100,7 @@ set(TEST_LIBRARIES ${CURL_LIBRARIES}
 
 )
 
-include_directories(SYSTEM ${CMAKE_SOURCE_DIR} /usr/include /usr/local/include ${TENSORRT_INCLUDE_DIR})
+include_directories(SYSTEM ${CMAKE_SOURCE_DIR} /usr/include /usr/local/include ${TENSORRT_INCLUDE_DIR} ${BUNDLED_ONNXRUNTIME_INCLUDE_DIR})
 
 add_executable(xinfer main.cpp)
 target_link_libraries(xinfer PRIVATE xTorch::xTorch )

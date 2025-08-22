@@ -18,7 +18,7 @@
 // --- Dependency on xTorch for model definition ---
 // This class needs to know the architecture to load the weights
 // before converting to a TensorRT engine.
-#include <xtorch/models/resnet.h> // Example for a ResNet classifier
+#include <xtorch/xtorch.h> // Example for a ResNet classifier
 
 namespace xinfer::zoo::vision {
 

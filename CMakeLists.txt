@@ -1,16 +1,10 @@
 cmake_minimum_required(VERSION 3.28)
-project(xinfer)
+project(xinfer LANGUAGES CXX CUDA)
 
 set(CMAKE_CUDA_ARCHITECTURES "75;86")
 set(CMAKE_CUDA_COMPILER /usr/local/cuda-12.8/bin/nvcc)
 
-
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
-
-
-find_package(CUDA REQUIRED)
+#find_package(CUDA REQUIRED)
 list(APPEND CMAKE_PREFIX_PATH  /home/kami/libs/cpp/TensorRT-10.13.2.6/)
 # Find TensorRT
 # You might need to adjust this path to where your TensorRT is installed
@@ -34,6 +28,9 @@ endif()
 message(STATUS "Found TensorRT headers: ${TENSORRT_INCLUDE_DIR}")
 message(STATUS "Found TensorRT library: ${TENSORRT_LIBRARY}")
 
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 
 

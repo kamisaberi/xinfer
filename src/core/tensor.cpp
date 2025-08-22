@@ -1,5 +1,5 @@
 // src/core/tensor.cpp
-#include <core/tensor.h>
+#include <include/core/tensor.h>
 #include <cuda_runtime.h>
 #include <stdexcept>
 #include <numeric>

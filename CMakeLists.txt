@@ -10,6 +10,33 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 
+find_package(CUDA REQUIRED)
+list(APPEND CMAKE_PREFIX_PATH  /home/kami/libs/cpp/TensorRT-10.13.2.6/)
+# Find TensorRT
+# You might need to adjust this path to where your TensorRT is installed
+find_path(TENSORRT_INCLUDE_DIR NvInfer.h
+        HINTS /usr/include/x86_64-linux-gnu/
+)
+find_library(TENSORRT_LIBRARY nvinfer
+        HINTS /usr/lib/x86_64-linux-gnu/
+)
+find_library(TENSORRT_PARSER_LIBRARY nvinfer_plugin
+        HINTS /usr/lib/x86_64-linux-gnu/
+)
+find_library(TENSORRT_ONNX_PARSER_LIBRARY nvonnxparser
+        HINTS /usr/lib/x86_64-linux-gnu/
+)
+
+if (NOT TENSORRT_INCLUDE_DIR OR NOT TENSORRT_LIBRARY)
+    message(FATAL_ERROR "TensorRT not found. Please set TENSORRT_ROOT or check paths.")
+endif()
+
+message(STATUS "Found TensorRT headers: ${TENSORRT_INCLUDE_DIR}")
+message(STATUS "Found TensorRT library: ${TENSORRT_LIBRARY}")
+
+
+
+
 find_package(xTorch REQUIRED)
 if(xTorch_FOUND)
     message(STATUS "xTorch config directory found at: ${xTorch_DIR}")

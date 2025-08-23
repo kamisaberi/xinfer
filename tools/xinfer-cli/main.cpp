@@ -2,12 +2,12 @@
 #include <string>
 #include <vector>
 #include <chrono>
-#include <cxxopts.hpp>
+#include <third_party/cxxopts/cxxopts.hpp>
 
 // Include the high-level builder and core engine from your xinfer library
-#include <xinfer/builders/engine_builder.h>
-#include <xinfer/core/engine.h>
-#include <xinfer/core/tensor.h>
+#include <include/builders/engine_builder.h>
+#include <include/core/engine.h>
+#include <include/core/tensor.h>
 
 // Helper to check for file existence
 bool file_exists(const std::string& path) {

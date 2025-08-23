@@ -141,3 +141,6 @@ install(FILES
         "${CMAKE_CURRENT_BINARY_DIR}/xinfer-config-version.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xinfer
 )
+
+
+add_subdirectory(tools/xinfer-cli)

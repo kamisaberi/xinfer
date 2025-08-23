@@ -59,7 +59,7 @@ void run_zoo_api_example() {
         // We use the lower-level builders here to demonstrate the full pipeline.
 
         // 1a. Create an xTorch model and load the weights
-        auto model = std::make_shared<xt::models::ResNet>();
+        auto model = std::make_shared<xt::models::ResNet>({2,3,4,6}, 10,3);
         xt::load(model, "dummy_resnet18.weights");
 
         // 1b. Export the xTorch model to the standard ONNX format

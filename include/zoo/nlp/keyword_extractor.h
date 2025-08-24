@@ -1,8 +1,38 @@
-//
-// Created by kami on 8/16/25.
-//
+#pragma once
 
-#ifndef KEYWORD_EXTRACTOR_H
-#define KEYWORD_EXTRACTOR_H
+#include <string>
+#include <vector>
+#include <memory>
 
-#endif //KEYWORD_EXTRACTOR_H
+namespace xinfer::zoo::nlp {
+
+    struct Keyword {
+        std::string text;
+        float score;
+    };
+
+    struct KeywordExtractorConfig {
+        std::string engine_path;
+        std::string vocab_path;
+        int max_sequence_length = 512;
+    };
+
+    class KeywordExtractor {
+    public:
+        explicit KeywordExtractor(const KeywordExtractorConfig& config);
+        ~KeywordExtractor();
+
+        KeywordExtractor(const KeywordExtractor&) = delete;
+        KeywordExtractor& operator=(const KeywordExtractor&) = delete;
+        KeywordExtractor(KeywordExtractor&&) noexcept;
+        KeywordExtractor& operator=(KeywordExtractor&&) noexcept;
+
+        std::vector<Keyword> predict(const std::string& text, int top_k = 5);
+
+    private:
+        struct Impl;
+        std::unique_ptr<Impl> pimpl_;
+    };
+
+} // namespace xinfer::zoo::nlp
+

@@ -1,5 +1,5 @@
-#include <xinfer/zoo/vision/classifier.h>
-#include <xinfer/hub/model_info.h> // For the HardwareTarget struct
+#include <include/zoo/vision/classifier.h>
+#include <include/hub/model_info.h> // For the HardwareTarget struct
 #include <opencv2/opencv.hpp>
 
 int main() {

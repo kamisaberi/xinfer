@@ -4,7 +4,7 @@
 #include <vector>
 
 #include <include/core/engine.h>
-// #include <xinfer/preproc/audio_processor.h>
+#include <include/preproc/audio_processor.h>
 
 namespace xinfer::zoo::generative {
 

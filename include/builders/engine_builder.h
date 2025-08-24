@@ -5,11 +5,12 @@
 #include <vector>
 #include "calibrator.h" // Include the calibrator interface
 
-namespace xinfer::builders
-{
+namespace xinfer::builders {
+
+
+
     // Specification for an input tensor, used for parsing and optimization
-    struct InputSpec
-    {
+    struct InputSpec {
         std::string name;
         std::vector<int64_t> shape;
     };
@@ -21,8 +22,7 @@ namespace xinfer::builders
      * This class abstracts the entire TensorRT build pipeline, from parsing
      * an ONNX file to applying optimizations and serializing the final engine.
      */
-    class EngineBuilder
-    {
+    class EngineBuilder {
     public:
         EngineBuilder();
         ~EngineBuilder();
@@ -35,18 +35,6 @@ namespace xinfer::builders
         EngineBuilder& from_onnx(const std::string& onnx_path);
 
 
-        /**
-        * @struct BuildFromUrlConfig
-        * @brief Configuration for the download-and-build workflow.
-        */
-        struct BuildFromUrlConfig
-        {
-            std::string onnx_url;
-            std::string output_engine_path;
-            bool use_fp16 = false;
-            bool use_int8 = false;
-            // ... add other builder options like max_batch_size, etc.
-        };
 
         /**
          * @brief Enables FP16 precision mode for 2x performance on supported GPUs.
@@ -74,4 +62,5 @@ namespace xinfer::builders
         struct Impl; // PIMPL idiom
         std::unique_ptr<Impl> pimpl_;
     };
+
 } // namespace xinfer::builders

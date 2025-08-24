@@ -1,8 +1,16 @@
-//
-// Created by kami on 8/24/25.
-//
+#pragma once
 
-#ifndef CTC_DECODER_H
-#define CTC_DECODER_H
+#include <include/core/tensor.h>
+#include <vector>
+#include <string>
+#include <tuple>
 
-#endif //CTC_DECODER_H
+namespace xinfer::postproc::ctc {
+
+    std::pair<std::string, float> decode(
+        const core::Tensor& logits,
+        const std::vector<std::string>& character_map
+    );
+
+} // namespace xinfer::postproc::ctc
+

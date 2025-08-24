@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <opencv2/opencv.hpp>
+#include "../../hub/model_info.h"
 
 // Forward declarations for clean header
 namespace xinfer::core { class Tensor; }
@@ -52,6 +53,13 @@ public:
      * @param config A ClassifierConfig struct with all necessary settings.
      */
     explicit ImageClassifier(const ClassifierConfig& config);
+    /**
+         * @brief [HUB CONSTRUCTOR] Downloads a pre-built engine and creates a classifier.
+         * This is the easiest way to get started.
+         * @param model_id The model ID from the Ignition Hub (e.g., "resnet18-imagenet").
+         * @param target The specific hardware target to download the engine for.
+         */
+    explicit ImageClassifier(const std::string& model_id, const xinfer::hub::HardwareTarget& target);
 
     ~ImageClassifier();
 

@@ -5,6 +5,7 @@
 #include <cuda_runtime_api.h>
 #include <curand.h>
 #include "NvInfer.h"
+#include <iostream>
 
 // Bring in the helper macros
 #define CHECK_CUDA(call) { \

@@ -1,8 +1,40 @@
-//
-// Created by kami on 8/16/25.
-//
+#pragma once
 
-#ifndef QUESTION_ANSWERING_H
-#define QUESTION_ANSWERING_H
+#include <string>
+#include <vector>
+#include <memory>
 
-#endif //QUESTION_ANSWERING_H
+namespace xinfer::zoo::nlp {
+
+    struct QAResult {
+        std::string answer;
+        float score;
+        int start_pos;
+        int end_pos;
+    };
+
+    struct QAConfig {
+        std::string engine_path;
+        std::string vocab_path;
+        int max_sequence_length = 384;
+    };
+
+    class QuestionAnswering {
+    public:
+        explicit QuestionAnswering(const QAConfig& config);
+        ~QuestionAnswering();
+
+        QuestionAnswering(const QuestionAnswering&) = delete;
+        QuestionAnswering& operator=(const QuestionAnswering&) = delete;
+        QuestionAnswering(QuestionAnswering&&) noexcept;
+        QuestionAnswering& operator=(QuestionAnswering&&) noexcept;
+
+        QAResult predict(const std::string& question, const std::string& context);
+
+    private:
+        struct Impl;
+        std::unique_ptr<Impl> pimpl_;
+    };
+
+} // namespace xinfer::zoo::nlp
+

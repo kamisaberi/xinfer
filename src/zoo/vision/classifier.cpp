@@ -6,8 +6,8 @@
 #include <algorithm>
 #include <functional>
 
-#include <xinfer/core/engine.h>
-#include <xinfer/preproc/image_processor.h>
+#include <include/core/engine.h>
+#include <include/preproc/image_processor.h>
 
 namespace xinfer::zoo::vision {
 

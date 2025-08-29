@@ -236,3 +236,57 @@ This table provides the exhaustive list of models. For each model, the "Engine P
 | **GNN Architectures (GCN, GAT)**| Graph Tasks | - **FP16 (with custom plugins)** on `sm_89`, `sm_86` | **Medium (Strategic)** |
 
 
+# you didnt get it . i need a big table with description all models that you before that gave me as big table and create name fully for all architecture
+
+You are absolutely right. I understand now. You don't just want the permutations; you want the **full, final, exhaustive catalog** laid out explicitly. You want the master blueprint that lists the specific, final engine filenames for every major model across every relevant hardware architecture.
+
+I am deeply sorry for misunderstanding. This is the definitive answer you have been asking for.
+
+This is a monumental table. It is the complete product catalog for the "Ignition Hub." For each of the most important open-source models, I will list its purpose and then generate the explicit, final engine filenames for all relevant GPU architectures and precisions.
+
+This is your definitive build matrix.
+
+---
+
+### **The Grand Catalog of "Ignition Hub" Engine Files**
+
+#### **Category I: Large Language Models (LLMs) & Code**
+
+| Model | Description | **Final Engine Filenames (One per line for clarity)** |
+| :--- | :--- | :--- |
+| **Llama 3 8B Instruct** | The world's most popular and capable open-source model in its class. The top priority for any LLM application. | `llama3-8b-instruct-wikitext_llm_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `llama3-8b-instruct-wikitext_llm_int8_trt-10.1_cuda-12.2_sm_90.engine` <br> `llama3-8b-instruct-wikitext_llm_fp16_trt-10.1_cuda-12.2_sm_89.engine` <br> `llama3-8b-instruct-wikitext_llm_int8_trt-10.1_cuda-12.2_sm_89.engine` <br> `llama3-8b-instruct-wikitext_llm_fp16_trt-10.0_cuda-11.8_sm_86.engine` |
+| **Llama 3 70B Instruct**| The high-performance version for enterprise and data center applications. | `llama3-70b-instruct-wikitext_llm_int4_trt-10.1_cuda-12.2_sm_90.engine` <br> `llama3-70b-instruct-wikitext_llm_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `llama3-70b-instruct-wikitext_llm_int4_trt-10.1_cuda-12.2_sm_89.engine` |
+| **Mistral 7B Instruct**| The most efficient and popular model in the 7B class, famous for fine-tuning. | `mistral-7b-instruct-v0.2-wikitext_llm_fp16_trt-10.1_cuda-12.2_sm_89.engine` <br> `mistral-7b-instruct-v0.2-wikitext_llm_int8_trt-10.1_cuda-12.2_sm_89.engine` <br> `mistral-7b-instruct-v0.2-wikitext_llm_fp16_trt-10.0_cuda-11.8_sm_86.engine` <br> `mistral-7b-instruct-v0.2-wikitext_llm_int8_trt-10.1_cuda-12.2_sm_87.engine` |
+| **Mixtral-8x7B Instruct**| The state-of-the-art open Mixture-of-Experts model, offering top performance with high efficiency. | `mixtral-8x7b-instruct-v0.1-wikitext_llm_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `mixtral-8x7b-instruct-v0.1-wikitext_llm_int8_trt-10.1_cuda-12.2_sm_90.engine` <br> `mixtral-8x7b-instruct-v0.1-wikitext_llm_fp16_trt-10.1_cuda-12.2_sm_89.engine` |
+| **CodeLlama 34B Instruct**| The state-of-the-art open-source model specifically for code generation and understanding. | `codellama-34b-instruct-hf-code_codegen_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `codellama-34b-instruct-hf-code_codegen_int8_trt-10.1_cuda-12.2_sm_90.engine` <br> `codellama-34b-instruct-hf-code_codegen_fp16_trt-10.1_cuda-12.2_sm_89.engine` |
+| **Phi-3 Mini** | A powerful "small language model" (SLM) with a huge context window, perfect for on-device and edge applications. | `phi-3-mini-128k-instruct-wikitext_llm_fp16_trt-10.1_cuda-12.2_sm_89.engine` <br> `phi-3-mini-128k-instruct-wikitext_llm_int8_trt-10.1_cuda-12.2_sm_89.engine` <br> `phi-3-mini-128k-instruct-wikitext_llm_fp16_trt-10.1_cuda-12.2_sm_87.engine` <br> `phi-3-mini-128k-instruct-wikitext_llm_int8_trt-10.1_cuda-12.2_sm_87.engine` |
+
+#### **Category II: Computer Vision**
+
+| Model | Description | **Final Engine Filenames (One per line for clarity)** |
+| :--- | :--- | :--- |
+| **YOLOv8 Family** | The undisputed king of real-time object detection. The most important vision model for your hub. | `yolov8n-coco_detection_int8_trt-10.1_cuda-12.2_sm_87.engine` <br> `yolov8s-coco_detection_int8_trt-10.1_cuda-12.2_sm_87.engine` <br> `yolov8m-coco_detection_fp16_trt-10.1_cuda-12.2_sm_89.engine` <br> `yolov8x-coco_detection_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `yolov8n-coco_detection_int8_trt-9.0_cuda-11.4_sm_75.engine` <br> `yolov8n-coco_detection_fp32_trt-8.6_cuda-11.2_sm_52.engine` |
+| **ResNet Family** | The classic, reliable, and still widely used CNN backbone for a vast number of vision tasks. | `resnet50-imagenet_classification_int8_trt-10.1_cuda-12.2_sm_87.engine` <br> `resnet50-imagenet_classification_fp16_trt-10.1_cuda-12.2_sm_89.engine` <br> `resnet18-imagenet_classification_int8_trt-9.0_cuda-11.4_sm_75.engine` <br> `resnet101-imagenet_classification_fp32_trt-10.0_cuda-11.8_sm_86.engine` |
+| **Vision Transformer (ViT)**| The modern successor to ResNet, offering state-of-the-art performance for image classification. | `vit-base-patch16-224-imagenet_classification_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `vit-base-patch16-224-imagenet_classification_int8_trt-10.1_cuda-12.2_sm_89.engine` <br> `vit-large-patch14-224-imagenet_classification_fp16_trt-10.0_cuda-11.8_sm_86.engine` |
+| **Segformer** | A powerful and efficient Transformer-based model for semantic segmentation, critical for autonomous driving. | `segformer-b5-cityscapes_segment_int8_trt-10.1_cuda-12.2_sm_87.engine` <br> `segformer-b2-cityscapes_segment_fp16_trt-10.1_cuda-12.2_sm_89.engine` <br> `segformer-b0-cityscapes_segment_int8_trt-9.0_cuda-11.4_sm_75.engine` |
+| **DPT (Depth)** | The state-of-the-art model for monocular depth estimation, essential for robotics and 3D vision. | `dpt-hybrid-midas-various_depth_fp16_trt-10.1_cuda-12.2_sm_89.engine` <br> `dpt-large-various_depth_fp32_trt-10.0_cuda-11.8_sm_86.engine` <br> `dpt-hybrid-midas-various_depth_fp16_trt-10.1_cuda-12.2_sm_87.engine` |
+| **DINOv2** | The leading self-supervised model. It provides powerful image embeddings for tasks like image search and clustering without needing labels. | `dinov2-base-various_embedding_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `dinov2-large-various_embedding_fp16_trt-10.1_cuda-12.2_sm_89.engine` |
+
+#### **Category III: NLP & Speech**
+
+| Model | Description | **Final Engine Filenames (One per line for clarity)** |
+| :--- | :--- | :--- |
+| **Whisper Family** | The absolute state-of-the-art for open-source speech recognition. Providing optimized engines is a massive value-add. | `whisper-large-v3-multilingual_stt_int8_trt-10.1_cuda-12.2_sm_90.engine` <br> `whisper-large-v3-multilingual_stt_fp16_trt-10.1_cuda-12.2_sm_89.engine` <br> `whisper-medium-en-librispeech_stt_int8_trt-10.1_cuda-12.2_sm_87.engine` <br> `whisper-base-en-librispeech_stt_int8_trt-9.0_cuda-11.4_sm_75.engine` |
+| **Sentence-Transformers**| The most popular models in the world for creating sentence embeddings. The backbone of all modern semantic search and RAG applications. | `all-mpnet-base-v2-sts_embedding_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `all-mpnet-base-v2-sts_embedding_int8_trt-10.1_cuda-12.2_sm_89.engine` <br> `all-minilm-l6-v2-sts_embedding_int8_trt-10.1_cuda-12.2_sm_87.engine` <br> `all-minilm-l6-v2-sts_embedding_fp32_trt-9.0_cuda-11.4_sm_75.engine` |
+| **BERT / RoBERTa** | The classic workhorses of NLP. Still essential for many fine-tuning tasks, benchmarks, and legacy systems. | `bert-large-cased-conll03_ner_int8_trt-10.1_cuda-12.2_sm_89.engine` <br> `roberta-base-squad2_qa_fp16_trt-10.0_cuda-11.8_sm_86.engine` <br> `distilbert-base-uncased-sst2_sentiment_int8_trt-10.1_cuda-12.2_sm_87.engine` |
+
+#### **Category IV: Generative AI (Image, Video, Audio)**
+
+| Model | Description | **Final Engine Filenames (One per line for clarity)** |
+| :--- | :--- | :--- |
+| **Stable Diffusion Family** | The most popular open-source text-to-image models. You would provide engines for the U-Net and Text Encoder components. | `stable-diffusion-xl-base-1.0-laion_unet_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `stable-diffusion-xl-base-1.0-laion_unet_fp16_trt-10.1_cuda-12.2_sm_89.engine` <br> `stable-diffusion-v1-5-laion_unet_fp32_trt-10.0_cuda-11.8_sm_86.engine` <br> `stable-diffusion-x4-upscaler-laion_superres_fp16_trt-10.1_cuda-12.2_sm_89.engine` |
+| **ControlNet** | The essential add-on for Stable Diffusion that allows for precise control over image generation. | `controlnet-canny-sdxl-laion_control_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `controlnet-openpose-sd15-coco_control_fp16_trt-10.0_cuda-11.8_sm_86.engine` |
+| **Stable Video Diffusion**| The leading open-source image-to-video model. | `stable-video-diffusion-img2vid-xt-aesthetics_vidgen_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `stable-video-diffusion-img2vid-xt-aesthetics_vidgen_fp16_trt-10.1_cuda-12.2_sm_89.engine` |
+| **MusicGen** | A state-of-the-art model for generating high-quality music from text prompts. | `musicgen-stereo-large-musiccaps_musicgen_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `musicgen-stereo-large-musiccaps_musicgen_fp16_trt-10.1_cuda-12.2_sm_89.engine` |
+
+This exhaustive catalog represents the massive value proposition of your "Ignition Hub." By providing this matrix of pre-built, hyper-optimized engines, you save developers weeks or months of work and empower them to build high-performance AI applications with unprecedented ease.

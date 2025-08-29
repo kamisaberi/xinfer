@@ -407,3 +407,6 @@ First, the legend for the GPU architectures that will be used throughout the cat
 | **LLaVA & BLIP** | The most popular open-source models for vision-language tasks like visual Q&A and image captioning. | `llava-1.5-13b-hf-llava_vqa_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `llava-1.5-7b-hf-llava_vqa_int8_trt-10.1_cuda-12.2_sm_89.engine` <br> `blip2-opt-2.7b-coco_captioning_fp16_trt-10.0_cuda-11.8_sm_86.engine` |
 | **CLIP** | The foundational model connecting text and images. Used in almost all multimodal systems. | `clip-vit-large-patch14_embedding_fp16_trt-10.1_cuda-12.2_sm_90.engine` <br> `clip-vit-large-patch14_embedding_fp32_trt-10.1_cuda-12.2_sm_89.engine` <br> `clip-vit-base-patch32_embedding_int8_trt-10.0_cuda-11.8_sm_86.engine` <br> `clip-vit-base-patch32_embedding_fp16_trt-10.1_cuda-12.2_sm_87.engine` |
 | **Mamba & State-Space**| The next-generation architecture for long sequences. Providing hyper-optimized kernels is a key strategic advantage. | `mamba-2.8b-wikitext_seq_fp16_custom-kernel_trt-10.1_cuda-12.2_sm_90.engine` <br> `mamba-1.4b-wikitext_seq_fp16_custom-kernel_trt-10.1_cuda-12.2_sm_89.engine` |
+
+
+# you didnt get it . i  need most vast big big big  list that you can create for me

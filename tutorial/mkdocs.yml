@@ -1,18 +1,18 @@
 # The Definitive mkdocs.yml for the xInfer Ecosystem
 
 site_name: xInfer Performance Toolkit
-site_url: https://your-username.github.io/xinfer/  # IMPORTANT: Replace with your actual URL
-repo_url: https://github.com/your-username/xinfer   # IMPORTANT: Replace with your repo URL
-repo_name: your-username/xinfer
+site_url: https://xinfer.aryorithm.com/docs/  # IMPORTANT: Replace with your actual URL
+repo_url: https://github.com/kamisaberi/xinfer   # IMPORTANT: Replace with your repo URL
+repo_name: kamisaberi/xinfer
 site_description: "A C++ inference toolkit for maximum performance on NVIDIA GPUs."
 
 theme:
   name: material
-  logo: assets/xinfer_logo.png # Optional: Add your logo to docs/assets/
-  favicon: assets/favicon.png # Optional: Add a favicon
+  logo: https://aryorithm.com/assets/images/logo/ar-black.png # Optional: Add your logo to docs/assets/
+  favicon: https://aryorithm.com/assets/images/logo/ar-black.png # Optional: Add a favicon
   palette:
-    - scheme: default
-      primary: indigo
+    - scheme: slate
+      primary: black
       accent: blue
       toggle:
         icon: material/brightness-7

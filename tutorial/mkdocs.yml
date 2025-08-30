@@ -1,16 +1,18 @@
-# mkdocs.yml for xInfer
+# The Definitive mkdocs.yml for the xInfer Ecosystem
 
 site_name: xInfer Performance Toolkit
-site_url: https://your-username.github.io/xinfer/  # Replace with your actual URL
-repo_url: https://github.com/your-username/xinfer   # Replace with your repo URL
+site_url: https://your-username.github.io/xinfer/  # IMPORTANT: Replace with your actual URL
+repo_url: https://github.com/your-username/xinfer   # IMPORTANT: Replace with your repo URL
 repo_name: your-username/xinfer
+site_description: "A C++ inference toolkit for maximum performance on NVIDIA GPUs."
 
 theme:
   name: material
-  logo: assets/xinfer_logo.png # Add your logo
+  logo: assets/xinfer_logo.png # Optional: Add your logo to docs/assets/
+  favicon: assets/favicon.png # Optional: Add a favicon
   palette:
     - scheme: default
-      primary: blue
+      primary: indigo
       accent: blue
       toggle:
         icon: material/brightness-7
@@ -24,48 +26,60 @@ theme:
   features:
     - navigation.tabs
     - navigation.top
+    - navigation.sections
     - search.suggest
     - search.highlight
     - content.code.copy
     - content.tabs.link
 
-# The navigation sidebar structure, designed for a standalone xInfer project
+# The Complete Navigation Structure for Your Documentation
 nav:
-  - Home: index.md
-  - Installation: installation.md
-  - 🚀 Quickstart: quickstart.md
-  - Concepts:
-      - Philosophy: concepts/philosophy.md
-      - The xInfer Workflow: concepts/workflow.md
-  - How-to Guides:
-      - Building TensorRT Engines: guides/building-engines.md
-      - INT8 Quantization: guides/int8-quantization.md
-      - Building Custom Pipelines: guides/custom-pipelines.md
-  - The Model Zoo API:
-      - Overview: zoo-api/index.md
-      - Computer Vision: zoo-api/vision.md
-      - Generative AI: zoo-api/generative.md
-      - Natural Language Processing: zoo-api/nlp.md
-      - Audio & DSP: zoo-api/audio.md
-      - Time Series: zoo-api/timeseries.md
-      - 3D & Spatial: zoo-api/threed.md
-      - Geospatial: zoo-api/geospatial.md
-      - Medical: zoo-api/medical.md
-      - Document AI: zoo-api/document.md
-      - Specialized Models: zoo-api/special.md
-  - Core Toolkit API Reference:
-      - Overview: core-api/index.md
-      - Core Runtime: core-api/engine.md
-      - Engine Builders: core-api/builders.md
-      - Pre-processing: core-api/preproc.md
-      - Post-processing: core-api/postproc.md
-  - Ignition Hub (Cloud):
-      - Introduction: hub/index.md
-      - Usage Guide: hub/usage.md
+  - 'Home': 'index.md'
+  - 'Installation': 'installation.md'
+  - '🚀 Quickstart': 'quickstart.md'
+  - 'Concepts':
+      - 'Philosophy (F1 vs. Porsche)': 'concepts/philosophy.md'
+      - 'The xInfer Workflow': 'concepts/workflow.md'
+  - 'How-to Guides':
+      - 'Building TensorRT Engines': 'guides/building-engines.md'
+      - 'INT8 Quantization': 'guides/int8-quantization.md'
+      - 'Building Custom Pipelines': 'guides/custom-pipelines.md'
+  - 'The Model Zoo API':
+      - 'Overview': 'zoo-api/index.md'
+      - 'Core AI Tasks':
+          - 'Computer Vision': 'zoo-api/vision.md'
+          - 'Generative AI': 'zoo-api/generative.md'
+          - 'Natural Language Processing': 'zoo-api/nlp.md'
+          - 'Audio & DSP': 'zoo-api/audio.md'
+      - 'Specialized Domains':
+          - '3D & Spatial': 'zoo-api/threed.md'
+          - 'Document AI': 'zoo-api/document.md'
+          - 'Geospatial': 'zoo-api/geospatial.md'
+          - 'Medical': 'zoo-api/medical.md'
+          - 'Time Series': 'zoo-api/timeseries.md'
+      - 'Industry Verticals':
+          - 'Reinforcement Learning': 'zoo-api/rl.md'
+          - 'Robotics': 'zoo-api/robotics.md'
+          - 'Drones': 'zoo-api/drones.md'
+          - 'Gaming': 'zoo-api/gaming.md'
+          - 'Finance (HFT)': 'zoo-api/hft.md'
+          - 'Retail': 'zoo-api/retail.md'
+          - 'Telecom': 'zoo-api/telecom.md'
+  - 'Core Toolkit API Reference':
+      - 'Overview': 'core-api/index.md'
+      - 'Core Runtime (Engine, Tensor)': 'core-api/engine.md'
+      - 'Engine Builders': 'core-api/builders.md'
+      - 'Pre-processing Kernels': 'core-api/preproc.md'
+      - 'Post-processing Kernels': 'core-api/postproc.md'
+  - 'Ignition Hub (Cloud)':
+      - 'Introduction': 'hub/index.md'
+      - 'Usage Guide': 'hub/usage.md'
 
-# For syntax highlighting
+# For professional-looking code blocks and admonitions
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.superfences
   - admonition
+  - toc:
+      permalink: true

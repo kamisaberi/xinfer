@@ -143,4 +143,4 @@ install(FILES
 )
 
 
-add_subdirectory(tools/xinfer-cli)
+#add_subdirectory(tools/xinfer-cli)

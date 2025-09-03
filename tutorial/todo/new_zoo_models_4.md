@@ -35,10 +35,10 @@ Here is another massive list of startup ideas, expanding into new industries and
 **Mission:** Enable personalized, adaptive, and scalable learning experiences.
 
 | Subject | New `zoo` Class / Filename | **What It Does (in one line)** | **Core "F1 Car" Tech Inside** |
-| :--- | :--- | :--- | :--- |
-| **AI Tutor** | `education/tutor.h` | Provides real-time feedback and hints to a student working on a digital whiteboard. | A multi-modal pipeline fusing vision (to read the student's work) and a small, fast LLM for guidance. |
-| **Automated Grader** | `education/grader.h` | Grades handwritten essays or complex diagrams based on a rubric. | A combination of `zoo::document::HandwritingRecognizer` and an NLP scoring model. |
-| **Presentation Coach**| `education/presentation_coach.h`| Analyzes a video of a person practicing a speech, provides feedback on posture, tone, and filler words. | A fused pipeline of `zoo::vision::PoseEstimator`, `zoo::audio::SpeechRecognizer`, and a custom audio analysis kernel. |
+| :--- |:---------------------------| :--- | :--- |
+| **AI Tutor** | `education/tutor.h`        | Provides real-time feedback and hints to a student working on a digital whiteboard. | A multi-modal pipeline fusing vision (to read the student's work) and a small, fast LLM for guidance. |
+| **Automated Grader** | `education/grader.h`       | Grades handwritten essays or complex diagrams based on a rubric. | A combination of `zoo::document::HandwritingRecognizer` and an NLP scoring model. |
+| **Presentation Coach**| `education/ .h`            | Analyzes a video of a person practicing a speech, provides feedback on posture, tone, and filler words. | A fused pipeline of `zoo::vision::PoseEstimator`, `zoo::audio::SpeechRecognizer`, and a custom audio analysis kernel. |
 
 ---
 

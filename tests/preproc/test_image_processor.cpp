@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <xinfer/preproc/image_processor.h>
-#include <xinfer/core/tensor.h>
+#include <xinfer/xinfer.h>
+#include <xinfer/xinfer.h>
 #include <opencv2/opencv.hpp>
 #include <vector>
 

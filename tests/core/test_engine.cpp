@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <xinfer/core/engine.h>
-#include <xinfer/core/tensor.h>
+#include <xinfer/xinfer.h>
+#include <xinfer/xinfer.h>
 #include <fstream>
 
 class EngineTest : public ::testing::Test {

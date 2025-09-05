@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <xinfer/zoo/vision/classifier.h>
+#include <xinfer/xinfer.h>
 #include <opencv2/opencv.hpp>
 #include <fstream>
 

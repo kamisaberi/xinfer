@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <xinfer/postproc/detection.h>
-#include <xinfer/core/tensor.h>
+#include <xinfer/xinfer.h>
+#include <xinfer/xinfer.h>
 #include <vector>
 
 class NmsTest : public ::testing::Test {};

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <xinfer/builders/engine_builder.h>
+#include <xinfer/xinfer.h>
 #include <fstream>
 
 class EngineBuilderTest : public ::testing::Test {

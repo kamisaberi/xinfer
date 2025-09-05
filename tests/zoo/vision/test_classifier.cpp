@@ -62,28 +62,5 @@ TEST_F(ClassifierZooTest, Predict) {
         ASSERT_LE(res.confidence, 1.0f);
         ASSERT_FALSE(res.label.empty());
     }
-}```
+}
 
-### **How to Run Your Test Suite**
-
-1.  **Build your project** with the new `tests/CMakeLists.txt`.
-    ```bash
-    cd xinfer/build
-    cmake ..
-    make -j
-    ```
-2.  **Execute the test runner:**
-    ```bash
-    # From the build directory
-    ./tests/xinfer_tests
-    ```
-    You will get a clean, formatted output from Google Test showing which tests passed and which failed.
-
-3.  **Use `ctest` for CI/CD:**
-    ```bash
-    # From the build directory
-    ctest --verbose
-    ```
-    This is the standard way to run tests in an automated continuous integration environment like GitHub Actions.
-
-This comprehensive test suite will give you immense confidence in your library's stability, prevent regressions, and serve as an excellent set of examples for your users.

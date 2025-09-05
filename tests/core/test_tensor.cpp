@@ -1,5 +1,5 @@
-#include <gtest/gtest.hh>
-#include <xinfer/core/tensor.h>
+#include <gtest/gtest.h>
+#include <xinfer/xinfer.h>
 #include <vector>
 #include <numeric>
 

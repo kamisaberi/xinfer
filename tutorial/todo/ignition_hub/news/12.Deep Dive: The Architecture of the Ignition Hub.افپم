@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale-1.0">
+    <title>Deep Dive: The Architecture of the Ignition Hub</title>
+</head>
+<body>
+    <article>
+        <header>
+            <h1>Deep Dive: The Architecture of the Ignition Hub</h1>
+            <p class="subtitle">A look under the hood at the cloud-native build farm that powers our on-demand TensorRT engine service.</p>
+            <p class="meta">Published: February 1, 2026 | By: The Ignition AI Engineering Team</p>
+        </header>
+
+        <section>
+            <p>The "magic" of the Ignition Hub—the ability to get a perfectly optimized TensorRT engine for any model on any hardware with a single command—is the result of a sophisticated, scalable, and fully automated cloud backend. In this post, we want to give you a look at the architecture that makes this possible.</p>
+
+            <p>Our core challenge was to solve the "build matrix from hell": hundreds of popular models multiplied by dozens of GPU architectures, TensorRT versions, and precision configurations. The solution is a distributed, container-based build farm.</p>
+        </section>
+
+        <section>
+            <h2>The Core Components</h2>
+            <figure>
+                <!-- A diagram showing: User -> API -> Queue -> Builder Agent -> Cache -> User -->
+                <img src="assets/hub_architecture_diagram.png" alt="Architecture diagram of the Ignition Hub">
+                <figcaption>The high-level architecture of the Ignition Hub build pipeline.</figcaption>
+            </figure>
+
+            <h3>1. The API & Web Frontend</h3>
+            <p>This is the entry point. It's a standard web service that handles user authentication, model uploads (for enterprise), and build requests. When a user requests an engine, the API first checks our cache (e.g., an S3 bucket). If a pre-built engine exists, it's served instantly.</p>
+
+            <h3>2. The Job Queue</h3>
+            <p>If a requested engine is not in the cache, the API places a new "build job" onto a robust message queue (like RabbitMQ or AWS SQS). This job contains all the necessary metadata: the model's location, the target GPU architecture (e.g., `sm_87`), the TensorRT version, and the desired precision.</p>
+
+            <h3>3. The Auto-Scaling Build Farm</h3>
+            <p>This is the heart of the system. It's a Kubernetes cluster with multiple node groups, each configured with a different class of NVIDIA GPU (T4, A100, H100, RTX 4090, etc.). A "builder agent" (a specialized Docker container) is running on these nodes.</p>
+            <ul>
+                <li>The agent pulls a job from the queue.</li>
+                <li>It downloads the source model.</li>
+                <li>It invokes our internal `xinfer::builders` toolkit to run the time-consuming TensorRT build process.</li>
+                <li>It runs a quick validation test on the generated engine.</li>
+                <li>Upon success, it uploads the final `.engine` file to our central cache and notifies the user.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Conclusion: An "F1 Factory" in the Cloud</h2>
+            <p>By building this automated, cloud-native factory, we have productized the complex and time-consuming task of performance optimization. It allows us to provide the entire AI community with perfectly tuned "F1 car" engines on demand, a core part of our mission to accelerate the future of AI deployment.</p>
+        </section>
+    </article>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your First F1 Car: Building a TensorRT Engine with xinfer-cli</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Your First F1 Car: Building a TensorRT Engine with xinfer-cli</h1>
+        <p class="subtitle">A step-by-step guide to converting a standard ONNX model into a hyper-optimized engine in 5 minutes.</p>
+        <p class="meta">Published: November 9, 2025 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>Welcome! This guide will show you the power of the `xInfer` toolkit by walking you through its most important workflow: building a TensorRT engine. This process takes a flexible, framework-agnostic model and compiles it into a hardware-specific, high-performance binary.</p>
+
+        <h3>Prerequisites</h3>
+        <ul>
+            <li>You have successfully <a href="/docs/installation.html">installed xInfer</a>.</li>
+            <li>You have an ONNX model file. For this guide, we'll use a pre-trained ResNet-50.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>Step 1: Get the ONNX Model</h2>
+        <p>First, let's download a standard ResNet-50 model from the ONNX Model Zoo.</p>
+        <pre><code>wget https://github.com/onnx/models/raw/main/vision/classification/resnet/model/resnet50-v2-7.onnx -O resnet50.onnx</code></pre>
+    </section>
+
+    <section>
+        <h2>Step 2: Build the FP16 Engine</h2>
+        <p>This is where the magic happens. We will use the <code>xinfer-cli</code> tool to build an engine optimized for FP16 precision, which is perfect for modern NVIDIA GPUs.</p>
+        <pre><code># Navigate to your xinfer/build/tools/xinfer-cli directory
+./xinfer-cli --build \
+    --onnx ../../../resnet50.onnx \
+    --save_engine resnet50_fp16.engine \
+    --fp16 \
+    --batch 16</code></pre>
+        <p>Let's break down that command:</p>
+        <ul>
+            <li><code>--build</code>: Specifies the build command.</li>
+            <li><code>--onnx</code>: The path to our input ONNX file.</li>
+            <li><code>--save_engine</code>: The path for our final, optimized output file.</li>
+            <li><code>--fp16</code>: Enables fast FP16 precision.</li>
+            <li><code>--batch 16</code>: Optimizes the engine for a maximum batch size of 16.</li>
+        </ul>
+        <p>After a few moments, you will have a new file: <code>resnet50_fp16.engine</code>. This file is all you need to deploy your model.</p>
+    </section>
+
+    <section>
+        <h2>Step 3: Benchmark Your New Engine</h2>
+        <p>How fast is it? Let's use <code>xinfer-cli</code> again to run a quick performance benchmark.</p>
+        <pre><code>./xinfer-cli --benchmark \
+    --engine resnet50_fp16.engine \
+    --batch 16 \
+    --iterations 500</code></pre>
+        <p>You will see the final throughput and latency numbers for your model, running at maximum speed on your specific GPU.</p>
+    </section>
+
+    <section>
+        <h2>Next Steps</h2>
+        <p>Congratulations! You have successfully built and benchmarked your first high-performance AI engine. You are now ready to use this engine in a real C++ application.</p>
+        <p>Check out our <a href="/docs/quickstart.html">Quickstart Guide</a> to see how to load this engine with the <code>xInfer::zoo::ImageClassifier</code> and run inference in just a few lines of code.</p>
+    </section>
+</article>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcing the xInfer Document AI Zoo: Intelligent Document Processing in C++</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Announcing the xInfer Document AI Zoo: Intelligent Document Processing in C++</h1>
+        <p class="subtitle">Go beyond simple OCR. Introducing a new suite of pipelines for layout analysis, table extraction, and more, built for high-throughput enterprise workflows.</p>
+        <p class="meta">Published: May 14, 2026 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>Every business runs on documents—invoices, contracts, reports, and forms. Extracting structured information from these unstructured files is a massive and expensive manual process. While OCR can read the text, it doesn't understand the context or layout.</p>
+        <p>To solve this, we are excited to launch the **xInfer Document AI Zoo**, a collection of powerful C++ pipelines designed to automate the most complex document processing tasks at scale.</p>
+    </section>
+
+    <section>
+        <h2>From Image to Structured Data</h2>
+        <p>Our new `zoo::document` module provides end-to-end solutions that understand both the text and the visual structure of a page:</p>
+        <ul>
+            <li><strong>`LayoutParser`</strong>: Uses a TensorRT-optimized instance segmentation model (like LayoutLMv3) to segment a document into its constituent parts: paragraphs, tables, figures, and headers.</li>
+            <li><strong>`TableExtractor`</strong>: A powerful, two-stage pipeline that first identifies the structure of a table (rows, columns) and then uses our `OCR` engine to extract the text from each cell into a machine-readable format.</li>
+            <li><strong>`SignatureDetector`</strong>: A specialized object detector for finding handwritten signatures in legal or financial documents.</li>
+            <li><strong>`HandwritingRecognizer`</strong>: A specialized OCR pipeline fine-tuned for transcribing handwritten text.</li>
+        </ul>
+
+        <h3>The `xInfer` Advantage: High-Throughput Processing</h3>
+        <p>A bank or an insurance company may need to process millions of documents per day. A Python-based, cloud-service solution can be slow and incredibly expensive at this scale. The `xInfer` Document AI Zoo is designed for high-throughput, on-premise deployment. Our C++ pipelines can process documents at a rate that is an order of magnitude faster and cheaper than the competition.</p>
+    </section>
+
+    <section>
+        <h2>The Future of Enterprise Automation</h2>
+        <p>By providing these fundamental building blocks for document understanding, we are enabling our enterprise customers to build powerful automation workflows, from automated invoice processing to intelligent contract analysis. This is a core part of our mission to bring high-performance AI to every industry.</p>
+        <p>Learn more in our new <a href="/docs/zoo-api/document.html">Document AI Zoo documentation</a>.</p>
+    </section>
+</article>
+</body>
+</html>

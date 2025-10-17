@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcing the xInfer Geospatial Zoo: Planetary-Scale AI in C++</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Announcing the xInfer Geospatial Zoo: Planetary-Scale AI in C++</h1>
+        <p class="subtitle">Introducing a new suite of hyper-optimized pipelines for satellite and aerial image analysis, from building segmentation to disaster assessment.</p>
+        <p class="meta">Published: April 1, 2026 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>The Earth observation industry is generating data at an unprecedented rate, with satellites capturing terabytes of high-resolution imagery every single day. The primary bottleneck is no longer data acquisition, but analysis. Turning this massive stream of pixels into actionable intelligence requires a new level of computational performance.</p>
+        <p>Today, we are thrilled to launch the <strong>xInfer Geospatial Zoo</strong>, a dedicated suite of tools designed to solve the "big data" problem of geospatial AI. Built on our hyper-performant C++/TensorRT core, these pipelines enable organizations to process satellite and drone imagery at a scale and speed that is simply not possible with traditional, Python-based frameworks.</p>
+    </section>
+
+    <section>
+        <h2>What's Included in the Geospatial Zoo</h2>
+        <p>Our initial release provides end-to-end, production-ready solutions for the most critical geospatial tasks:</p>
+        <ul>
+            <li><strong><code>zoo::geospatial::BuildingSegmenter</code></strong>: Extracts building footprints from high-resolution aerial imagery with incredible accuracy.</li>
+            <li><strong><code>zoo::geospatial::RoadExtractor</code></strong>: Generates road network maps from satellite data.</li>
+            <li><strong><code>zoo::geospatial::MaritimeDetector</code></strong>: Detects and classifies ships and other vessels in coastal and open-ocean imagery.</li>
+            <li><strong><code>zoo::geospatial::DisasterAssessor</code></strong>: A powerful change detection pipeline that compares pre- and post-event imagery to instantly map the extent of damage.</li>
+        </ul>
+
+        <h3>Case Study: From Days to Minutes</h3>
+        <p>A typical disaster assessment workflow requires an analyst to manually inspect images or run a slow, cloud-based process that can take hours or days. Using the <code>DisasterAssessor</code>, an emergency response agency can process an entire city's post-hurricane imagery and generate a complete damage map in under an hour on a single GPU workstation.</p>
+        <pre><code>#include &lt;xinfer/zoo/geospatial/disaster_assessor.h&gt;
+
+// The API is as simple as our other zoo modules
+cv::Mat image_before = cv::imread("city_before.tif");
+cv::Mat image_after = cv::imread("city_after.tif");
+
+xinfer::zoo::geospatial::DisasterAssessor assessor("damage_model.engine");
+cv::Mat damage_mask = assessor.predict(image_before, image_after);
+            </code></pre>
+    </section>
+
+    <section>
+        <h2>The `xInfer` Advantage for Geospatial</h2>
+        <p>Our "F1 car" approach is uniquely suited for this industry. Our fused CUDA pre-processing kernels can handle massive, multi-channel GeoTIFF files efficiently, while our TensorRT-optimized engines ensure the highest possible throughput. This allows our customers to reduce their cloud computing costs by an order of magnitude and enables new, real-time monitoring applications that were previously infeasible.</p>
+        <p>This is the future of planetary-scale intelligence, powered by `xInfer`.</p>
+    </section>
+</article>
+</body>
+</html>

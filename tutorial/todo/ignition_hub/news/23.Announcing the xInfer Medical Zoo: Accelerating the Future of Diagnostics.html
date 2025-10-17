@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcing the xInfer Medical Zoo: Accelerating the Future of Diagnostics</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Announcing the xInfer Medical Zoo: Accelerating the Future of Diagnostics</h1>
+        <p class="subtitle">Introducing a suite of high-performance C++ pipelines for medical image analysis, built for research and clinical integration.</p>
+        <p class="meta">Published: May 7, 2026 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>Artificial intelligence has the potential to revolutionize healthcare, but moving a model from a research paper to a clinical setting is an immense challenge. The performance, reliability, and low-latency requirements of medical applications are beyond the capabilities of standard Python-based tools.</p>
+        <p>Today, we are proud to introduce the **xInfer Medical Zoo**, a new suite of professional-grade, high-performance C++ pipelines designed to bridge this gap and accelerate the future of AI-powered diagnostics.</p>
+        <p><em>(Note: The `xInfer Medical Zoo` is for research and development use only and is not a certified medical device.)</em></p>
+    </section>
+
+    <section>
+        <h2>Pipelines for Critical Tasks</h2>
+        <p>Our initial release provides robust, easy-to-use solutions for some of the most computationally demanding tasks in medical imaging:</p>
+        <ul>
+            <li><strong>`zoo::medical::TumorDetector`</strong>: A pipeline for 3D tumor detection in CT and MRI scans, powered by a TensorRT-optimized 3D U-Net.</li>
+            <li><strong>`zoo::medical::CellSegmenter`</strong>: A high-throughput tool for instance segmentation of cells in microscope images, enabling rapid analysis for research and pathology.</li>
+            <li><strong>`zoo::medical::UltrasoundGuide`</strong>: An ultra-low-latency segmentation pipeline designed for real-time guidance during ultrasound-guided procedures.</li>
+            <li><strong>`zoo::medical::RetinaScanner`</strong>: A complete pipeline for the automated detection and grading of diabetic retinopathy from fundus images.</li>
+        </ul>
+
+        <h3>The `xInfer` Advantage: Speed and Reliability</h3>
+        <p>Consider a digital pathology workflow. Analyzing a single gigapixel whole-slide image can take hours on a CPU-based system. Our <code>PathologyAssistant</code>, running on a single GPU with `xInfer`, can tile, analyze, and produce a complete heatmap in **under 5 minutes**. This is the kind of performance that transforms a slow, offline process into an interactive diagnostic tool.</p>
+    </section>
+
+    <section>
+        <h2>Our Commitment to the Healthcare Community</h2>
+        <p>We are committed to providing the medical AI research community with the best possible tools. We believe that by providing a reliable, high-performance C++ foundation, we can help accelerate the journey from groundbreaking research to life-saving clinical applications.</p>
+        <p>Explore the new pipelines in our <a href="/docs/zoo-api/medical.html">Medical Zoo documentation</a>.</p>
+    </section>
+</article>
+</body>
+</html>

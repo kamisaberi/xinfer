@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcing xTorch RL: Train Reinforcement Learning Agents in Pure C++</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Announcing xTorch RL: Train Reinforcement Learning Agents in Pure C++</h1>
+        <p class="subtitle">Introducing a new module for `xTorch` with high-quality implementations of PPO and SAC, and a seamless path to deployment with `xInfer`.</p>
+        <p class="meta">Published: June 4, 2026 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>Reinforcement Learning is the key to unlocking true intelligence in robotics, gaming, and autonomous systems. However, the RL development workflow has been stuck in Python, creating a painful gap between the simulation/training environment and the final, real-world C++ application.</p>
+        <p>Today, we are closing that gap. We are excited to announce the release of **xTorch RL**, a new, open-source module for the `xTorch` ecosystem that brings state-of-the-art RL training to the world of high-performance C++.</p>
+    </section>
+
+    <section>
+        <h2>What's Included</h2>
+        <p>`xTorch RL` is designed to feel as familiar as popular Python libraries like Stable Baselines3, but with the performance of native C++. Our initial release includes:</p>
+        <ul>
+            <li><strong>High-Quality Algorithms:</strong> Production-ready, well-tested implementations of **PPO (Proximal Policy Optimization)** and **SAC (Soft Actor-Critic)**.</li>
+            <li><strong>Gym-like Environment API:</strong> A simple, standardized C++ interface for creating your own training environments, whether it's a game engine or a physics simulator.</li>
+            <li><strong>Seamless Deployment Path:</strong> A policy trained with `xTorch RL` can be saved and then instantly loaded into our hyper-performant `xInfer::zoo::rl::Policy` engine for the lowest possible inference latency.</li>
+        </ul>
+
+        <h3>The End-to-End C++ Workflow</h3>
+        <pre><code>#include &lt;xtorch/xtorch.h&gt;
+#include &lt;xtorch/rl/ppo.h&gt;
+#include &lt;xinfer/zoo/rl/policy.h&gt;
+
+int main() {
+    // 1. Train your agent in C++ with xTorch
+    MyCustomEnv env;
+    xt::rl::PPO ppo_trainer(env);
+    ppo_trainer.learn(1'000'000); // Train for 1 million timesteps
+    ppo_trainer.save("my_robot_policy.xt");
+
+    // 2. Deploy the policy with xInfer for maximum speed
+    xinfer::zoo::rl::PolicyConfig config;
+    // (This would use a tool to convert the .xt file to a .engine file)
+    config.engine_path = "my_robot_policy.engine";
+    xinfer::zoo::rl::Policy policy(config);
+
+    // 3. Run the optimized policy in your application
+    // auto action = policy.predict(current_state);
+}
+            </code></pre>
+    </section>
+
+    <section>
+        <h2>Why This Matters</h2>
+        <p>By enabling an end-to-end C++ workflow, `xTorch RL` eliminates the bugs, performance mismatches, and integration nightmares that have plagued robotics and game AI development for years. It allows you to train and deploy in the same language, with the same code, and with the performance that real-world applications demand.</p>
+        <p>This is a major step in our mission to build the definitive platform for professional AI engineering. Check out the new tutorials and get started on <a href="https://github.com/your-username/xtorch">GitHub</a>.</p>
+    </section>
+</article>
+</body>
+</html>

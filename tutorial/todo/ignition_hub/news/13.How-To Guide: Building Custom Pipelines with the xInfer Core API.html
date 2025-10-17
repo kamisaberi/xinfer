@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How-To Guide: Building Custom Pipelines with the xInfer Core API</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>How-To Guide: Building Custom Pipelines with the xInfer Core API</h1>
+        <p class="subtitle">Go beyond the zoo: a guide for power users who need to build their own multi-model, high-performance pipelines.</p>
+        <p class="meta">Published: February 15, 2026 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>The <code>xInfer::zoo</code> provides incredible, one-line solutions for common tasks. But what if your problem is unique? What if you need to chain multiple models together or implement custom logic between steps? For this, you need the <strong>xInfer Core Toolkit</strong>.</p>
+        <p>This guide will show you how to use the low-level components—<code>core::InferenceEngine</code>, <code>preproc::ImageProcessor</code>, and <code>postproc::detection</code>—to build a custom, two-stage pipeline from scratch.</p>
+    </section>
+
+    <section>
+        <h2>The Goal: "Find the Largest Cat and Classify It"</h2>
+        <p>Our custom pipeline will:</p>
+        <ol>
+            <li>Run a YOLOv8 object detector to find all objects in a scene.</li>
+            <li>Implement custom C++ logic to find the bounding box of the largest "cat".</li>
+            <li>Crop the image to that bounding box.</li>
+            <li>Run a ResNet-50 classifier on the cropped patch to determine the cat's breed.</li>
+        </ol>
+
+        <h3>The Code</h3>
+        <pre><code>#include &lt;xinfer/core/engine.h&gt;
+#include &lt;xinfer/preproc/image_processor.h&gt;
+#include &lt;xinfer/postproc/detection.h&gt;
+#include &lt;xinfer/postproc/yolo_decoder.h&gt;
+#include &lt;opencv2/opencv.hpp&gt;
+
+int main() {
+    // 1. Load both of your pre-built engines
+    xinfer::core::InferenceEngine detector_engine("yolov8.engine");
+    xinfer::core::InferenceEngine classifier_engine("resnet50.engine");
+
+    // 2. Set up a pre-processor for the detector
+    xinfer::preproc::ImageProcessor detector_preprocessor(640, 640, true);
+
+    // 3. Run the detection stage
+    cv::Mat image = cv::imread("living_room.jpg");
+    xinfer::core::Tensor det_input;
+    detector_preprocessor.process(image, det_input);
+    auto det_outputs = detector_engine.infer({det_input});
+
+    // ... Post-process detection outputs to get a vector of BoundingBox ...
+    // (This part uses yolo_decoder and nms)
+
+    // 4. Custom Logic: Find the largest cat
+    cv::Rect largest_cat_box;
+    float max_area = 0;
+    for (const auto& box : detections) {
+        if (box.label == "cat") {
+            float area = (box.x2 - box.x1) * (box.y2 - box.y1);
+            if (area > max_area) {
+                max_area = area;
+                largest_cat_box = cv::Rect(box.x1, box.y1, box.x2-box.x1, box.y2-y1);
+            }
+        }
+    }
+
+    // 5. Run the classification stage on the cropped patch
+    if (max_area > 0) {
+        cv::Mat cat_patch = image(largest_cat_box);
+
+        xinfer::preproc::ImageProcessor classifier_preprocessor(224, 224, mean, std);
+        xinfer::core::Tensor cls_input;
+        classifier_preprocessor.process(cat_patch, cls_input);
+
+        auto cls_outputs = classifier_engine.infer({cls_input});
+        // ... Post-process classification output ...
+    }
+}
+            </code></pre>
+    </section>
+
+    <section>
+        <h2>Conclusion: Power and Flexibility</h2>
+        <p>This example shows the true power of the `xInfer` design. The `zoo` provides the "easy button," but the Core Toolkit provides the unconstrained flexibility and control that expert developers demand. By composing these high-performance, low-level primitives, you can build any custom AI pipeline imaginable.</p>
+    </section>
+</article>
+</body>
+</html>

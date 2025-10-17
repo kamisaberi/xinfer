@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcing the xInfer NLP Zoo: High-Throughput Language Processing in C++</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Announcing the xInfer NLP Zoo: High-Throughput Language Processing in C++</h1>
+        <p class="subtitle">Introducing our new suite of hyper-optimized pipelines for sentiment analysis, text embeddings, and more, built for native C++ applications.</p>
+        <p class="meta">Published: February 28, 2026 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>At Ignition AI, our mission is to deliver the fastest possible performance for all AI workloads. While our initial focus has been on computer vision, we are thrilled to announce a major expansion of our platform: the **xInfer NLP Zoo**.</p>
+        <p>C++ applications in finance, gaming, and server-side processing often need to handle a massive throughput of text data. The latency and overhead of calling a Python microservice for tasks like sentiment analysis or semantic search is a major bottleneck. The `xInfer NLP Zoo` solves this by bringing state-of-the-art Transformer models directly into your C++ application, running at maximum speed.</p>
+    </section>
+
+    <section>
+        <h2>What's Included in the NLP Zoo v1.0</h2>
+        <p>Our initial release provides easy-to-use, high-performance pipelines for the most critical NLP tasks:</p>
+        <ul>
+            <li><strong>`zoo::nlp::Classifier`</strong>: For high-throughput sentiment or intent classification.</li>
+            <li><strong>`zoo::nlp::Embedder`</strong>: The backbone of semantic search and RAG. Generate sentence embeddings with state-of-the-art models like Sentence-BERT at incredible speed.</li>
+            <li><strong>`zoo::nlp::NER`</strong>: For extracting named entities from text.</li>
+        </ul>
+
+        <h3>Example: High-Performance Semantic Search</h3>
+        <p>With the new `Embedder`, you can build a semantic search engine that is orders of magnitude faster than Python-based solutions.</p>
+        <pre><code>#include &lt;xinfer/zoo/nlp/embedder.h&gt;
+
+int main() {
+    // 1. Initialize the embedder with a pre-built Sentence-BERT engine
+    xinfer::zoo::nlp::EmbedderConfig config;
+    config.engine_path = "all-mpnet-base-v2.engine";
+    xinfer::zoo::nlp::Embedder embedder(config);
+
+    // 2. Create embeddings for your document database (this is done once)
+    std::vector&lt;std::string&gt; documents = {"doc1.txt", "doc2.txt", ...};
+    auto document_embeddings = embedder.predict_batch(documents);
+
+    // 3. At query time, embed the query and find the most similar document
+    std::string query = "What is the capital of France?";
+    auto query_embedding = embedder.predict(query);
+
+    // ... (fast vector similarity search logic) ...
+}
+            </code></pre>
+    </section>
+
+    <section>
+        <h2>The Future is Multi-Modal</h2>
+        <p>This is just the beginning. The NLP Zoo is a core part of our strategy to make `xInfer` the definitive performance platform for all AI domains. Stay tuned for our upcoming releases, which will include pipelines for summarization, question answering, and high-throughput LLM inference.</p>
+    </section>
+</article>
+</body>
+</html>

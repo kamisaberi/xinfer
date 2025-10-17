@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meet xInfer: The F1 Car for Your AI Models</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Meet xInfer: The F1 Car for Your AI Models</h1>
+        <p class="subtitle">Announcing our hyper-performant C++ inference toolkit, built on NVIDIA TensorRT and custom CUDA kernels to deliver state-of-the-art speed.</p>
+        <p class="meta">Published: November 23, 2025 | By: [Your Name]</p>
+    </header>
+
+    <section>
+        <p>Training a powerful AI model is only half the battle. The real challenge—and where most projects fail—is deploying that model in a real-world application that is fast, efficient, and reliable. Today, we are releasing the tool designed to solve that challenge: <strong>xInfer</strong>.</p>
+
+        <p>If our <code>xTorch</code> library is the "Porsche 911" for AI development—versatile, powerful, and easy to use—then <code>xInfer</code> is the "F1 car." It is a machine with a single, uncompromising purpose: to be the fastest possible inference engine for your trained models.</p>
+    </section>
+
+    <section>
+        <h2>The xInfer Philosophy: Performance is the Product</h2>
+        <p><code>xInfer</code> is built on the principle that for production AI, speed and efficiency are not just features; they are the entire product. We achieve this through a three-part strategy:</p>
+
+        <h3>1. Automated TensorRT Optimization</h3>
+        <p>Our <code>builders</code> module and <code>xinfer-cli</code> tool provide a simple, one-command workflow to convert your ONNX or <code>xTorch</code> models into hyper-optimized TensorRT engines. We automate the complex process of graph fusion, precision quantization (FP16/INT8), and kernel tuning.</p>
+
+        <h3>2. Fused CUDA Kernels for I/O</h3>
+        <p>We've identified the biggest bottlenecks in real-world pipelines: data pre- and post-processing. Our <code>preproc</code> and <code>postproc</code> modules provide a library of hand-tuned CUDA kernels that eliminate these CPU-bound tasks, from image normalization to Non-Maximum Suppression.</p>
+
+        <h3>3. The `zoo` API: Performance Made Simple</h3>
+        <p>All this power is useless if it's hard to use. The <code>xInfer::zoo</code> is a library of pre-packaged, task-oriented C++ classes that hide all this complexity. You can now run a hyper-optimized object detector in just a few lines of code:</p>
+        <pre><code>// The magical simplicity of the zoo
+xinfer::zoo::vision::DetectorConfig config;
+config.engine_path = "yolov8n_fp16.engine";
+xinfer::zoo::vision::ObjectDetector detector(config);
+
+cv::Mat image = cv::imread("my_image.jpg");
+auto detections = detector.predict(image);
+            </code></pre>
+    </section>
+
+    <section>
+        <h2>The Ignition Ecosystem, Complete</h2>
+        <p>With the release of <code>xInfer</code>, the Ignition AI ecosystem is now complete. You have a seamless, end-to-end, high-performance workflow, all in C++:</p>
+        <p style="text-align:center; font-size: 1.2em;">
+            <strong>Train with `xTorch` &rarr; Optimize with `xInfer` &rarr; Deploy with Confidence</strong>
+        </p>
+        <p>This is the future of professional AI development. We invite you to build it with us.</p>
+        <p><strong>Explore the documentation:</strong></p>
+        <ul>
+            <li><a href="/docs/guides/building-engines.html">How to Build Your First Engine</a></li>
+            <li><a href="/docs/zoo-api/index.html">Browse the Model Zoo</a></li>
+        </ul>
+    </section>
+</article>
+</body>
+</html>

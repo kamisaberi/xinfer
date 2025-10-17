@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcing the xInfer Voice Converter: Real-Time Voice Cloning in C++</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Announcing the xInfer Voice Converter: Real-Time Voice Cloning in C++</h1>
+        <p class="subtitle">Introducing a new `zoo` pipeline for high-fidelity, zero-shot voice conversion, built for interactive applications.</p>
+        <p class="meta">Published: July 16, 2026 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>Generative audio has reached an inflection point. Beyond simple text-to-speech, modern AI can now capture the unique characteristics of a person's voice and transfer it to new speech. This is **voice conversion**, and it has the potential to revolutionize everything from gaming to content creation.</p>
+        <p>The challenge has been latency. Most high-quality voice conversion models are too slow for real-time, interactive use. Today, we're solving that with the launch of the **`xInfer::zoo::generative::VoiceConverter`**.</p>
+    </section>
+
+    <section>
+        <h2>How It Works: A Three-Stage Pipeline</h2>
+        <p>Our `VoiceConverter` is a complete, end-to-end pipeline that runs entirely on the GPU for maximum speed:</p>
+        <ol>
+            <li><strong>Encoder:</strong> A model extracts the content (the words being said) and the linguistic features from the source audio.</li>
+            <li><strong>Speaker Embedding:</strong> A separate model takes a small, 5-second sample of the target voice and creates a unique "voice print" embedding.</li>
+            <li><strong>Decoder & Vocoder:</strong> The main generative model takes the content from step 1 and the voice print from step 2 and synthesizes a new mel-spectrogram. This is then passed to a hyper-optimized vocoder engine to create the final audio waveform.</li>
+        </ol>
+        <p>By compiling each of these models into a TensorRT engine and orchestrating them in a tight C++ loop, we can perform high-fidelity voice conversion with a latency low enough for interactive applications.</p>
+
+        <h3>Example Usage</h3>
+        <pre><code>#include &lt;xinfer/zoo/generative/voice_converter.h&gt;
+
+int main() {
+    // 1. Initialize the pipeline with your pre-built engines
+    xinfer::zoo::generative::VoiceConverterConfig config;
+    config.engine_path = "voice_conversion.engine";
+    xinfer::zoo::generative::VoiceConverter converter(config);
+
+    // 2. Load the source speech and a sample of the target voice
+    AudioWaveform source_audio = load_wav("source_speech.wav");
+    AudioWaveform target_voice_sample = load_wav("target_voice_sample.wav");
+
+    // 3. Perform the conversion
+    AudioWaveform converted_audio = converter.predict(source_audio, target_voice_sample);
+
+    // 4. Save the result
+    save_wav("converted_output.wav", converted_audio);
+}
+            </code></pre>
+    </section>
+
+    <section>
+        <h2>Unlocking New Applications</h2>
+        <p>Real-time voice conversion in C++ is a game-changer. Game developers can now allow players to speak with the voice of their in-game character. Dubbing studios can rapidly prototype different voices for a film. Content creators can create dynamic, AI-powered virtual assistants with unique personas.</p>
+        <p>This is another step in our mission to bring the full power of generative AI to the world of high-performance native applications. Learn more in our <a href="/docs/zoo-api/generative.html">Generative AI Zoo documentation</a>.</p>
+    </section>
+</article>
+</body>
+</html>

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Case Study: How xInfer is Powering the Next Generation of Retail Automation</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Case Study: How xInfer is Powering the Next Generation of Retail Automation</h1>
+        <p class="subtitle">A look at how our `Retail Zoo` pipelines are enabling real-time inventory management and customer analytics for a major retail partner.</p>
+        <p class="meta">Published: July 23, 2026 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>The retail industry runs on razor-thin margins. The difference between profit and loss is often determined by operational efficiency: Is the right product on the right shelf at the right time? Answering this question at the scale of thousands of stores and millions of products is a massive data challenge.</p>
+        <p>In a recent pilot program with a leading national retailer, we demonstrated how the high-performance pipelines in our **xInfer Retail Zoo** can transform their operations.</p>
+    </section>
+
+    <section>
+        <h2>The Challenge: Slow, Inaccurate Data</h2>
+        <p>Our partner was facing two major problems:</p>
+        <ul>
+            <li><strong>Out-of-Stocks:</strong> Their existing system only updated inventory once a day, leading to empty shelves and lost sales.</li>
+            <li><strong>Poor Layouts:</strong> They had no real, quantitative data on how customers moved through their stores, making store layout decisions a matter of guesswork.</li>
+        </ul>
+
+        <h2>The `xInfer` Solution: Real-Time In-Store Intelligence</h2>
+        <p>We deployed a single `xInfer`-powered edge computer in their pilot store, connected to the existing security cameras. This single device ran two of our `zoo` pipelines simultaneously:</p>
+
+        <h3>1. The `ShelfAuditor` Pipeline</h3>
+        <p>A camera pointed at a high-value aisle used our `zoo::retail::ShelfAuditor` to run a hyper-optimized product detection model. The system kept a **real-time count** of every item on the shelf. When the count for a popular item dropped below a threshold, it automatically sent an alert to a store associate's handheld device.</p>
+        <p><strong>Result:</strong> A **25% reduction in out-of-stock events** for the monitored aisle during the pilot period.</p>
+
+        <h3>2. The `CustomerAnalyzer` Pipeline</h3>
+        <p>Overhead cameras used our `zoo::retail::CustomerAnalyzer` to anonymously track customer flow throughout the store. The pipeline, running a person detector and a tracker, generated a continuous stream of data that was aggregated into a traffic heatmap.</p>
+        <p><strong>Result:</strong> The store manager was able to identify a major bottleneck near the entrance and an under-utilized, high-margin section at the back of the store. A simple layout change based on this data led to a **5% increase in sales** for that section.</p>
+    </section>
+
+    <section>
+        <h2>Conclusion: The ROI of Performance</h2>
+        <p>This pilot program is a clear demonstration of the business value of high-performance AI. By moving analytics from a slow, offline process to a real-time, on-device capability, `xInfer` provided our partner with the actionable intelligence they needed to reduce lost sales and increase revenue.</p>
+        <p>This is the power of our vertical solutions. We are not just delivering a model; we are delivering a measurable business outcome. Learn more about our solutions for the retail industry in our <a href="/docs/zoo-api/retail.html">Retail Zoo documentation</a>.</p>
+    </section>
+</article>
+</body>
+</html>

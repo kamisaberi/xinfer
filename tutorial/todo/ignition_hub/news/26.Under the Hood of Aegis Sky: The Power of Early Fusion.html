@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Under the Hood of Aegis Sky: The Power of Early Fusion</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Under the Hood of Aegis Sky: The Power of Early Fusion</h1>
+        <p class="subtitle">A technical deep dive into the multi-modal C++ pipeline that powers our autonomous counter-drone system.</p>
+        <p class="meta">Published: May 28, 2026 | By: The Ignition AI R&D Team</p>
+    </header>
+
+    <section>
+        <p>Traditional sensor systems operate in silos. A RADAR system generates a track. A camera system generates a bounding box. A CPU then wastes precious milliseconds trying to answer the question: "Are these two things the same object?" This "late fusion" approach is slow and brittle.</p>
+        <p>Our **Aura Perception Engine**, the brain of the Aegis Sky system, is built on a fundamentally superior principle: **early fusion**. We combine raw sensor data at the earliest possible stage, allowing our AI to reason about the world with a richness and speed that is physically impossible for siloed systems.</p>
+    </section>
+
+    <section>
+        <h2>The Fused CUDA Pipeline</h2>
+        <p>Our entire perception-to-action loop runs in under 50 milliseconds, orchestrated by a chain of hyper-optimized C++ and CUDA components:</p>
+        <ol>
+            <li><strong>Zero-Copy Ingestion:</strong> Raw data from our 4D imaging RADAR and high-framerate cameras is streamed directly into GPU memory, completely bypassing the CPU.</li>
+            <li><strong>Geometric Projection Kernel:</strong> A custom CUDA kernel takes the 3D RADAR point cloud and projects it into the 2D image space of our cameras. This creates a single, unified data structure: a "depth and velocity-augmented image."</li>
+            <li><strong>Multi-Modal Inference:</strong> Our custom TensorRT model doesn't just see pixels; it sees pixels with associated velocity and range data. It's a true 3D perception model that can differentiate a bird (non-ballistic trajectory) from a drone (ballistic trajectory) in a single pass.</li>
+            <li><strong>Fused Kalman Filter:</strong> The output is fed into a custom, multi-target Kalman filter kernel that maintains a stable, predictive track and generates a fire-control solution.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>The Unfair Advantage: Speed is Survival</h2>
+        <p>This early fusion architecture is our deepest moat. It is computationally expensive, but our expertise in CUDA and our `xInfer` toolkit make it possible to run in hard real-time on a power-constrained NVIDIA Jetson. It allows the Aegis Sky system to detect, classify, and track threats an order of magnitude faster than the competition.</p>
+        <p>In the world of autonomous defense, that speed is the difference between success and failure. It is the key to providing a reliable shield against the next generation of intelligent threats.</p>
+    </section>
+</article>
+</body>
+</html>

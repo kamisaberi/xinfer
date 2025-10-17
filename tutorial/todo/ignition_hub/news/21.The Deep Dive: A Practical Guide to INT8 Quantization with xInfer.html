@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Deep Dive: A Practical Guide to INT8 Quantization with xInfer</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>The Deep Dive: A Practical Guide to INT8 Quantization with xInfer</h1>
+        <p class="subtitle">Move beyond FP16. Learn how to achieve maximum throughput and efficiency by converting your models to run in 8-bit integer precision.</p>
+        <p class="meta">Published: April 23, 2026 | By: The Ignition AI Engineering Team</p>
+    </header>
+
+    <section>
+        <p>You've seen the 2x speedup from FP16. But for many applications, especially on power-constrained edge devices like the NVIDIA Jetson, that's not enough. To achieve the absolute maximum performance-per-watt, you need to leverage the GPU's specialized INT8 Tensor Cores. This is **INT8 quantization**, and it can provide another **2x or greater speedup** on top of an already-optimized model.</p>
+        <p>However, this power comes with a challenge: converting a 32-bit float model to 8-bit integers can cause a loss of accuracy if not done carefully. This guide will walk you through the "Post-Training Quantization" (PTQ) workflow and show you how `xInfer` makes this advanced technique safe and accessible.</p>
+    </section>
+
+    <section>
+        <h2>The Key: Calibration</h2>
+        <p>The core of the process is **calibration**. To minimize accuracy loss, TensorRT needs to analyze the distribution of your model's activation values. You provide a small, representative sample of your data (a "calibration dataset"), and TensorRT runs the model, observes the value ranges, and calculates the optimal scaling factors to map the floating-point numbers to the `[-128, 127]` integer range.</p>
+
+        <h3>The `xInfer` Workflow</h3>
+        <p>`xInfer` simplifies this into a clean, three-step C++ process:</p>
+        <ol>
+            <li>Create a dataloader for your calibration images using `xTorch`.</li>
+            <li>Wrap it in our `xinfer::builders::DataLoaderCalibrator`.</li>
+            <li>Pass the calibrator to the `xinfer::builders::EngineBuilder`.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>Example: Building an INT8 YOLOv8 Engine</h2>
+        <p>Let's build an INT8 engine for a YOLOv8 model. This is the perfect use case for a latency-critical robotics or drone application.</p>
+
+        <pre><code>#include &lt;xinfer/builders/engine_builder.h&gt;
+#include &lt;xinfer/builders/calibrator.h&gt;
+#include &lt;xtorch/xtorch.h&gt; // For the dataloader
+#include &lt;iostream&gt;
+#include &lt;memory&gt;
+
+int main() {
+    try {
+        // Step 1: Create a dataloader for your calibration dataset.
+        // This should be a small (e.g., 500 images) but representative sample.
+        auto calib_dataset = xt::datasets::ImageFolder("/path/to/coco/calibration_images/");
+        xt::dataloaders::ExtendedDataLoader calib_loader(calib_dataset, 16);
+
+        // Step 2: Instantiate the xInfer calibrator.
+        auto calibrator = std::make_shared&lt;xinfer::builders::DataLoaderCalibrator&gt;(calib_loader);
+
+        // Step 3: Configure and run the EngineBuilder with INT8 enabled.
+        std::cout &lt;&lt; "Building INT8 engine... This will take several minutes.\n";
+        xinfer::builders::EngineBuilder builder;
+
+        builder.from_onnx("yolov8n.onnx")
+               .with_int8(calibrator) // This is the key line!
+               .with_max_batch_size(16);
+
+        builder.build_and_save("yolov8n_int8.engine");
+
+        std::cout &lt;&lt; "INT8 engine built successfully!\n";
+
+    } catch (const std::exception& e) {
+        std::cerr &lt;&lt; "Error building INT8 engine: " &lt;&lt; e.what() &lt;&lt; std::endl;
+        return 1;
+    }
+    return 0;
+}
+            </code></pre>
+        <p>By using the `DataLoaderCalibrator`, `xInfer` completely automates the process of feeding batches of data to the TensorRT builder. The result is a hyper-performant INT8 engine, created with just a few extra lines of C++ code.</p>
+    </section>
+
+    <section>
+        <h2>Conclusion</h2>
+        <p>INT8 quantization is the ultimate optimization for deployment, and it's a core competency of the `xInfer` toolkit. By making this powerful technique accessible, we enable developers to build AI applications that are smaller, faster, and more efficient than ever before, unlocking a new wave of possibilities on the edge.</p>
+    </section>
+</article>
+</body>
+</html>

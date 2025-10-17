@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcing the xInfer Audio Zoo: Real-Time Generative Audio in C++</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Announcing the xInfer Audio Zoo: Real-Time Generative Audio in C++</h1>
+        <p class="subtitle">Introducing high-performance pipelines for Text-to-Speech, Music Generation, and more, built for native applications.</p>
+        <p class="meta">Published: April 9, 2026 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>The generative AI revolution is expanding beyond the visual to the audible. New models can generate stunningly realistic speech, music, and sound effects from simple text prompts. However, running these models in real-time, especially in native C++ applications like video games or creative tools, has been a major challenge.</p>
+        <p>We are excited to solve this problem with the launch of the **xInfer Audio Zoo**. This new suite of tools brings the power of generative audio to the world of high-performance C++.</p>
+    </section>
+
+    <section>
+        <h2>From Text to Waveform at the Speed of Light</h2>
+        <p>Our initial release focuses on the most demanding generative audio tasks:</p>
+        <ul>
+            <li><strong>`zoo::generative::TextToSpeech`</strong>: A complete, two-stage pipeline that converts text to a mel-spectrogram with a Transformer model, and then synthesizes the final audio waveform with a hyper-optimized vocoder engine. It's fast enough for real-time, dynamic character dialogue in a video game.</li>
+            <li><strong>`zoo::audio::MusicSourceSeparator`</strong>: A powerful utility that can take a mixed music track and separate it into its constituent stems (vocals, drums, bass, etc.) in a fraction of real-time.</li>
+        </ul>
+
+        <h3>The Core Technology: The Fused DSP Pipeline</h3>
+        <p>These pipelines are powered by our <code>preproc::AudioProcessor</code>, which performs the entire waveform-to-spectrogram conversion using a chain of custom CUDA kernels and the cuFFT library. By keeping the entire audio pipeline on the GPU, we minimize latency and maximize throughput.</p>
+    </section>
+
+    <section>
+        <h2>What This Unlocks</h2>
+        <p>With a real-time C++ TTS engine, game developers can create dynamic, unscripted conversations with NPCs. Creative tool developers can build instant voice-over features. Music producers can get high-quality audio stems in seconds.</p>
+        <p>This is a fundamental enabling technology for the next generation of interactive media, and it's available today in the <a href="/docs/zoo-api/audio.html">xInfer Audio Zoo</a>.</p>
+    </section>
+</article>
+</body>
+</html>

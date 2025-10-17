@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Mamba Advantage: Our Custom Kernel for Next-Gen Sequence Models</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>The Mamba Advantage: Unlocking Million-Token Contexts with Our Custom CUDA Kernel</h1>
+        <p class="subtitle">Announcing our first hyper-optimized, "F1 car" kernel for the Mamba architecture, a key differentiator for the Ignition Hub.</p>
+        <p class="meta">Published: December 7, 2025 | By: The Ignition AI R&D Team</p>
+    </header>
+
+    <section>
+        <p>The Transformer architecture is the king of modern AI, but it has a fatal flaw: its self-attention mechanism scales quadratically (O(n²)) with sequence length. This "quadratic wall" makes processing very long sequences—like an entire book or a full genome—prohibitively expensive.</p>
+        <p>A new class of architecture, the State-Space Model (SSM) and its leading implementation, **Mamba**, has emerged to solve this problem. Mamba scales linearly (O(n)), but its power comes from a complex, hardware-aware algorithm that is not a standard primitive in cuDNN or cuBLAS.</p>
+        <p>At Ignition AI, our mission is to build the fastest possible engines for the models that matter most. That's why today, we are announcing the development of our own **hyper-optimized, fused CUDA kernel for the Mamba architecture.**</p>
+    </section>
+
+    <section>
+        <h2>Why a Custom Kernel is Essential</h2>
+        <p>The core of Mamba is the "selective scan" operation. While the original authors released an excellent reference implementation, we saw an opportunity to push performance even further by hand-tuning the kernel for specific hardware and data types. Our custom kernel, which will be available as a premium option on the Ignition Hub, is being built with:</p>
+        <ul>
+            <li><strong>Warp-Level Primitives:</strong> Using advanced CUDA techniques to maximize communication and computation within a single GPU warp.</li>
+            <li><strong>Optimized Shared Memory Usage:</strong> A custom tiling and data-loading strategy to ensure the compute units are never starved for data.</li>
+            <li><strong>BF16/FP16 Specialization:</strong> Hand-tuned implementations for modern Tensor Core hardware.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>The "Fusion Forge" Philosophy</h2>
+        <p>This is the first product of our "Fusion Forge" initiative. We are not just a company that uses AI tools; we are a company that **builds the fundamental tools themselves.** Our R&D team is dedicated to identifying the next generation of AI architectures and building the world's fastest, most efficient kernels for them.</p>
+        <p>When you use an engine from the Ignition Hub, you aren't just getting the convenience of a pre-built binary. You are getting the performance of a world-class team of GPU optimization experts, baked directly into your application.</p>
+        <p>Stay tuned for our upcoming benchmarks. We believe our Mamba implementation will unlock new possibilities in long-sequence processing for genomics, finance, and beyond.</p>
+    </section>
+</article>
+</body>
+</html>

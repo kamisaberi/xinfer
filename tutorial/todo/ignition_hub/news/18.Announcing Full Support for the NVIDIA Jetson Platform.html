@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcing Full Support for the NVIDIA Jetson Platform</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Announcing Full Support for the NVIDIA Jetson Platform</h1>
+        <p class="subtitle">xInfer is now the definitive high-performance inference toolkit for robotics, drones, and the entire edge AI ecosystem.</p>
+        <p class="meta">Published: March 26, 2026 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>The future of AI is at the edge. From autonomous drones to industrial robots, the world's most innovative products are being built on embedded, power-constrained hardware. At the heart of this revolution is the NVIDIA Jetson platform.</p>
+        <p>Today, we are thrilled to announce that the entire `xInfer` ecosystem, including the `Ignition Hub`, now offers **first-class, production-ready support for the NVIDIA Jetson family**, including the Jetson AGX Orin, Orin Nano, and Xavier NX.</p>
+    </section>
+
+    <section>
+        <h2>Performance Where It Matters Most</h2>
+        <p>On a desktop GPU, performance is a luxury. On a Jetson, **performance-per-watt is everything**. A more efficient inference engine means longer drone flight times, smaller battery packs, and the ability to run more complex AI models on cheaper hardware.</p>
+        <p>Our `xInfer` toolkit is built for this world. Our C++ architecture has minimal overhead, and our ability to build hyper-optimized INT8 TensorRT engines is a game-changer for the power-constrained Jetson platform.</p>
+
+        <h3>The Ignition Hub for Jetson</h3>
+        <p>The "build barrier" is even more painful on embedded devices. Building a TensorRT engine directly on a Jetson can be slow and can tax the system's limited memory. The Ignition Hub solves this.</p>
+        <p>Our Hub now contains a massive catalog of pre-built engines specifically compiled and tuned for the Jetson architecture (`sm_87` and `sm_75`). You can now get a hyper-optimized YOLOv8 engine for your Orin Nano with a single command:</p>
+
+        <pre><code># Download the perfect engine for your robot
+xinfer::hub::HardwareTarget my_jetson = {"Jetson_Orin_Nano", "10.0.1", "INT8"};
+auto detector = xinfer::zoo::vision::Detector("yolov8n-coco", my_jetson);
+            </code></pre>
+    </section>
+
+    <section>
+        <h2>Our Commitment to the Edge</h2>
+        <p>We believe that the developers building the next generation of autonomous machines deserve the best tools. Our focus on the Jetson platform is a core part of our strategy. We are committed to providing the robotics and edge AI community with the most powerful, efficient, and easy-to-use inference platform in the world.</p>
+        <p>Get started with our <a href="/docs/tutorials/real-time-object-detection-on-jetson.html">new tutorial</a> on building a real-time detection app for the Jetson platform.</p>
+    </section>
+</article>
+</body>
+</html>

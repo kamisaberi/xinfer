@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Ultimate Guide to INT8 Quantization with xInfer</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>The Ultimate Guide to INT8 Quantization with xInfer</h1>
+        <p class="subtitle">A deep dive into the calibration process and how to achieve maximum performance without sacrificing accuracy.</p>
+        <p class="meta">Published: December 14, 2025 | By: The Ignition AI Team</p>
+    </header>
+
+    <section>
+        <p>You've already built an FP16 engine with <code>xInfer</code> and seen a 2x speedup. But what if you need even more performance? Welcome to the world of **INT8 quantization**, the technique that can provide another 2x or greater speedup, enabling state-of-the-art AI on the smallest edge devices.</p>
+        <p>This guide will demystify the process and show you how to use <code>xInfer</code>'s tools to build a high-performance INT8 engine.</p>
+    </section>
+
+    <section>
+        <h2>What is Calibration?</h2>
+        <p>Converting a 32-bit float to an 8-bit integer is a "lossy" conversion. To do this intelligently, TensorRT needs to understand the typical range of values that flow through your network. The **calibration process** does exactly this. You provide a small, representative sample of your data, and TensorRT runs the model, observes the activation distributions, and calculates the optimal scaling factors to minimize accuracy loss.</p>
+    </section>
+
+    <section>
+        <h2>Using the `DataLoaderCalibrator`</h2>
+        <p><code>xInfer</code> makes this process simple. If you're using our <code>xTorch</code> library, you can use our built-in <code>DataLoaderCalibrator</code>. Here’s how you would build an INT8 engine in C++.</p>
+
+        <pre><code>#include &lt;xinfer/builders/engine_builder.h&gt;
+#include &lt;xinfer/builders/calibrator.h&gt;
+#include &lt;xtorch/xtorch.h&gt;
+
+int main() {
+    // 1. Prepare your calibration dataloader from xTorch
+    auto calib_dataset = xt::datasets::ImageFolder("/path/to/calibration_images/");
+    xt::dataloaders::ExtendedDataLoader calib_loader(calib_dataset, 32);
+
+    // 2. Create the Calibrator object
+    auto calibrator = std::make_shared&lt;xinfer::builders::DataLoaderCalibrator&gt;(calib_loader);
+
+    // 3. Configure and run the EngineBuilder
+    xinfer::builders::EngineBuilder builder;
+    builder.from_onnx("resnet18.onnx")
+           .with_int8(calibrator) // Pass the calibrator here!
+           .with_max_batch_size(32);
+
+    builder.build_and_save("resnet18_int8.engine");
+}
+            </code></pre>
+        <p>That's it! The <code>EngineBuilder</code> will automatically use the calibrator to run the data through the network and generate a highly optimized INT8 engine.</p>
+    </section>
+
+    <section>
+        <h2>Conclusion</h2>
+        <p>INT8 quantization is the key to unlocking the maximum performance-per-watt on NVIDIA hardware. While the concept can be intimidating, the <code>xInfer</code> toolkit provides the simple, high-level abstractions you need to leverage this powerful technique in your own applications.</p>
+    </section>
+</article>
+</body>
+</html>

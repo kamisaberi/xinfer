@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcing the xInfer HFT Zoo: Microsecond-Scale AI for Quantitative Trading</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Announcing the xInfer HFT Zoo: Microsecond-Scale AI for Quantitative Trading</h1>
+        <p class="subtitle">Introducing our new suite of ultra-low-latency engines for the most demanding financial applications.</p>
+        <p class="meta">Published: May 21, 2026 | By: The Ignition AI Engineering Team</p>
+    </header>
+
+    <section>
+        <p>In the world of high-frequency trading, the only currency that matters is time. The competitive edge is measured in microseconds and nanoseconds. For years, the latency of AI models has made them a non-starter for the most speed-critical trading strategies. Any tool that introduces Python-level overhead is a non-starter.</p>
+        <p>At Ignition AI, we are obsessed with performance. We believe that AI can provide a true "alpha" advantage, but only if it can run at the speed of the market. That's why we built the **xInfer HFT Zoo**.</p>
+    </section>
+
+    <section>
+        <h2>Built for the Critical Path</h2>
+        <p>The `zoo::hft` module is not a general-purpose library. It is a collection of hardened, "zero-overhead" C++ components designed to be integrated directly into a co-located, real-time trading system. Our initial release includes:</p>
+        <ul>
+            <li><strong>`OrderExecutionPolicy`</strong>: An ultra-low-latency engine for running a trained RL policy. It takes the market state as a GPU tensor and returns a decision in single-digit microseconds.</li>
+            <li><strong>`MarketDataParser`</strong>: A custom CUDA kernel that can parse raw financial data packets (like FIX/FAST) directly on the GPU, bypassing the CPU entirely. This is designed for use with kernel-bypass networking cards to achieve the lowest possible data-to-decision latency.</li>
+        </ul>
+
+        <h3>The `xInfer` Advantage: Deterministic Performance</h3>
+        <p>Beyond raw speed, our HFT solutions are designed for **low jitter**. The C++ architecture and pre-compiled TensorRT engines ensure that your inference latency is not just low, but also highly predictable and deterministic, which is critical for systematic trading strategies.</p>
+    </section>
+
+    <section>
+        <h2>A Partner for Quants</h2>
+        <p>We understand the secretive and demanding nature of the quantitative finance industry. In addition to our off-the-shelf components, we offer custom kernel development and on-premise deployments of our `Ignition Hub` to help your firm build and deploy your own proprietary models with an unbeatable performance edge.</p>
+        <p>If you are a firm where every microsecond matters, <a href="/contact">contact our quantitative solutions team</a>.</p>
+    </section>
+</article>
+</body>
+</html>

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Dive: The Anatomy of a Microsecond-Scale HFT Pipeline with xInfer</title>
+</head>
+<body>
+<article>
+    <header>
+        <h1>Deep Dive: The Anatomy of a Microsecond-Scale HFT Pipeline with xInfer</h1>
+        <p class="subtitle">A look under the hood at how our `zoo::hft` components eliminate every possible bottleneck, from network packet to trade decision.</p>
+        <p class="meta">Published: July 2, 2026 | By: The Ignition AI Engineering Team</p>
+    </header>
+
+    <section>
+        <p>In high-frequency trading, the difference between profit and loss is measured in nanoseconds. The entire "tick-to-trade" pipeline must be a straight line, with every source of latency—from OS interrupts to framework overhead—ruthlessly eliminated. This is a world where Python is a non-starter, and even standard C++ is often too slow.</p>
+        <p>The `xInfer HFT Zoo` is not just a library; it is a collection of architectural patterns for building the fastest possible trading systems. In this post, we'll dissect the components that enable this microsecond-level performance.</p>
+    </section>
+
+    <section>
+        <h2>The "CPU-Bypass" Pipeline</h2>
+        <p>Our entire philosophy is to keep the CPU out of the critical path. The data should flow directly from the network card to the GPU and back out.</p>
+
+        <figure>
+            <!-- A diagram showing: Network -> GPU (Parser -> Model -> Signal) -> Network -->
+            <img src="assets/hft_pipeline_diagram.png" alt="Diagram of the HFT pipeline">
+            <figcaption>The xInfer HFT Pipeline: Data never touches the main system CPU.</figcaption>
+        </figure>
+
+        <h3>1. The `MarketDataParser` Kernel</h3>
+        <p>The first bottleneck is parsing raw market data feeds (like FIX/FAST). Our `zoo::hft::MarketDataParser` is a custom CUDA kernel that is designed to run on data streamed directly to GPU memory via kernel-bypass networking (e.g., using Mellanox VMA). It parses the raw binary packets and updates a limit-order-book tensor in VRAM without a single CPU instruction in the hot path.</p>
+
+        <h3>2. The `OrderExecutionPolicy` Engine</h3>
+        <p>The policy network itself (typically a small, fast MLP) is compiled with TensorRT into an engine with every possible optimization. Crucially, the engine is loaded once, and the `predict()` call is a "zero-overhead" function that simply enqueues the pre-compiled kernels on a dedicated CUDA stream.</p>
+
+        <h3>3. The C++ Orchestrator</h3>
+        <p>The C++ application that hosts this pipeline is a real-time, "busy-polling" process pinned to a specific CPU core. It does not handle the data itself; it only acts as a high-speed orchestrator, launching the parser kernel and the policy engine in a tight, deterministic loop.</p>
+    </section>
+
+    <section>
+        <h2>Conclusion: The Ultimate Edge</h2>
+        <p>This vertically integrated, C++/CUDA-native stack is the only way to achieve the deterministic, microsecond-level latency that modern HFT demands. By providing these ultra-performant building blocks, `xInfer` gives quantitative firms the technological "alpha" they need to compete and win.</p>
+        <p>Learn more in our <a href="/docs/zoo-api/hft.html">HFT Zoo documentation</a>.</p>
+    </section>
+</article>
+</body>
+</html>

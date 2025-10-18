@@ -2,9 +2,40 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Introducing Fast-Backtester: A Free, Open-Source GPU-Accelerated Backtesting Engine</title>
 </head>
 <body>
+<article>
+    <header>
+        <h1>Introducing Fast-Backtester: A Free, Open-Source GPU-Accelerated Backtesting Engine in C++</h1>
+        <p class="subtitle">Iterate on your trading strategies 100x faster. We are open-sourcing a new tool built on the xInfer engine.</p>
+        <p class="meta">Published: August 20, 2026 | By: The Ignition AI Team</p>
+    </header>
 
+    <section>
+        <p>The life of a quantitative researcher is a cycle of "idea, backtest, repeat." The faster you can test an idea against historical data, the faster you can find a winning strategy. Today, this process is painfully slow, often bottlenecked by CPU-bound Python backtesters like `backtrader` or `zipline`.</p>
+        <p>As part of our commitment to the quantitative community, we are proud to release **Fast-Backtester**, a free, open-source C++ library for backtesting that leverages the full power of the GPU.</p>
+    </section>
+
+    <section>
+        <h2>From Hours to Minutes</h2>
+        <p>Fast-Backtester is built on top of our `xInfer` core. By running the AI model inference part of the simulation on a TensorRT engine and managing the data on the GPU, it can simulate years of tick-by-tick market data in a fraction of the time of a traditional backtester.</p>
+
+        <h3>Key Features:</h3>
+        <ul>
+            <li><strong>GPU-Native:</strong> The entire event loop and model inference runs on the GPU for maximum speed.</li>
+            <li><strong>`xInfer` Integration:</strong> Natively supports running any model optimized with the `xInfer` toolkit.</li>
+            <li><strong>C++ Extensibility:</strong> Built in modern C++ for easy integration with existing quantitative finance libraries.</li>
+            <li><strong>Open Source:</strong> Licensed under Apache 2.0 for both academic and commercial use.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>Our Give-Back to the Community</h2>
+        <p>We are releasing Fast-Backtester to empower the next generation of quants and financial engineers. We believe that better tools lead to better research and more robust strategies. This is our way of contributing to the ecosystem that has given us so much.</p>
+        <p>We believe this will become an indispensable tool for anyone serious about quantitative research. Check out the project, try the examples, and contribute on <a href="https://github.com/your-username/fast-backtester">GitHub</a> today.</p>
+    </section>
+</article>
 </body>
 </html>

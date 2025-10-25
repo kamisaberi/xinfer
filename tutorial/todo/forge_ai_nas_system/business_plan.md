@@ -94,6 +94,7 @@ Our ideal customer is a technology-forward enterprise with a mature data science
 *   **Ignition Hub Deployment:** Once a model is discovered, the customer pays a recurring platform fee to host and serve the optimized engine via the `Ignition Hub`'s production APIs. This creates a sticky, recurring revenue stream.
 
 **5.2. High-Level Forecast (Product-Specific):**
+
 | Metric | Year 1 (Beta) | Year 2 | Year 3 |
 | :--- | :--- | :--- | :--- |
 | **Pilot Search Programs** | 5 | 25 | 75 |

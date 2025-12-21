@@ -41,3 +41,19 @@ You must compile your ONNX model to `.xmodel` using the **Vitis AI Compiler** in
 ```bash
 # On Host PC
 xinfer-cli compile --target amd-vitis --onnx model.onnx --output model.xmodel --vendor-params DPU_ARCH=DPUCZDX8G_ISA1_B4096
+```
+
+### 2. Run Inference (On Target Board)
+
+Transfer the `.xmodel` and the `xinfer` binary to the board.
+
+```cpp
+xinfer::zoo::vision::DetectorConfig config;
+config.target = xinfer::Target::AMD_VITIS;
+config.model_path = "model.xmodel";
+```
+
+## 📈 Performance Tips
+
+*   **Batching:** Vitis AI supports multi-threading. Set `vendor_params = {"NUM_RUNNERS=4"}` to use 4 CPU threads driving the DPU simultaneously.
+*   **Profiling:** Run your application with `vitis_ai_profiler ./my_app` to see the layer-by-layer execution time on the DPU hardware.

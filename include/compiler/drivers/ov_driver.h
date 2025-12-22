@@ -1,8 +1,25 @@
-//
-// Created by kami on 12/23/2025.
-//
+#pragma once
 
-#ifndef XINFER_OV_DRIVER_H
-#define XINFER_OV_DRIVER_H
+#include <xinfer/compiler/base_compiler.h>
 
-#endif //XINFER_OV_DRIVER_H
+namespace xinfer::compiler {
+
+    /**
+     * @brief Intel OpenVINO Compiler Driver
+     *
+     * Wraps the 'ovc' (formerly Model Optimizer) tool to convert
+     * standard models into OpenVINO IR format (.xml + .bin).
+     *
+     * Targets: Intel CPU, iGPU (Iris Xe), Discrete GPU (Arc), NPU (Core Ultra).
+     */
+    class OpenVINODriver : public ICompiler {
+    public:
+        bool compile(const CompileConfig& config) override;
+        bool validate_environment() override;
+
+        std::string get_name() const override {
+            return "Intel OpenVINO Converter (ovc)";
+        }
+    };
+
+} // namespace xinfer::compiler

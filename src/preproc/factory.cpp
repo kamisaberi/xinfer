@@ -43,9 +43,32 @@ namespace xinfer::preproc {
         return std::make_unique<OpenCVImagePreprocessor>();
     }
 
-    std::unique_ptr<IAudioPreprocessor> create_audio_preprocessor(Target target) {
-        // For now, CPU DSP is usually fast enough for audio
-        return std::make_unique<CpuAudioPreprocessor>();
+std::unique_ptr<IAudioPreprocessor> create_audio_preprocessor(Target target) {
+    
+    // 1. NVIDIA -> cuFFT
+    #ifdef XINFER_ENABLE_CUDA
+    if (target == Target::NVIDIA_TRT) {
+        return std::make_unique<CuFFTAudioPreproc>();
     }
+    #endif
 
+    // 2. Apple -> Accelerate
+    #ifdef __APPLE__
+    if (target == Target::APPLE_COREML) {
+        return std::make_unique<AccelerateAudioPreproc>();
+    }
+    #endif
+
+    // 3. ARM (Rockchip, Pi, Jetson CPU) -> NEON
+    #if defined(__aarch64__) || defined(__arm__)
+    {
+        auto ptr = std::make_unique<NeonAudioPreprocessor>();
+        // Check if config can be satisfied by NEON?
+        return ptr;
+    }
+    #endif
+
+    // 4. Generic Fallback (Intel/AMD CPU) -> KissFFT
+    return std::make_unique<CpuAudioPreprocessor>();
+}
 } // namespace xinfer::preproc

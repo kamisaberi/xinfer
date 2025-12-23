@@ -1,8 +1,16 @@
-//
-// Created by kami on 12/23/2025.
-//
+#pragma once
+#include <xinfer/preproc/image/image_preprocessor.h>
+#include <xinfer/preproc/image/types.h>
 
-#ifndef XINFER_OPENCV_IMAGE_H
-#define XINFER_OPENCV_IMAGE_H
+namespace xinfer::preproc {
 
-#endif //XINFER_OPENCV_IMAGE_H
+    class OpenCVImagePreprocessor : public IImagePreprocessor {
+    public:
+        void init(const ImagePreprocConfig& config) override;
+        void process(const ImageFrame& src, core::Tensor& dst) override;
+
+    private:
+        ImagePreprocConfig m_config;
+    };
+
+}

@@ -1,0 +1,8 @@
+//
+// Created by kami on 12/24/2025.
+//
+
+#ifndef XINFER_VIDEO_PREPROCESSOR_H
+#define XINFER_VIDEO_PREPROCESSOR_H
+
+#endif //XINFER_VIDEO_PREPROCESSOR_H

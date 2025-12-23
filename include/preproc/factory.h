@@ -44,6 +44,8 @@ namespace xinfer::preproc {
      */
     std::unique_ptr<IAudioPreprocessor> create_audio_preprocessor(xinfer::Target target);
 
-    
+
+    std::unique_ptr<ITextPreprocessor> create_text_preprocessor(text::TokenizerType type) ;
+
 
 } // namespace xinfer::preproc

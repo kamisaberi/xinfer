@@ -45,7 +45,24 @@ namespace xinfer::preproc {
     std::unique_ptr<IAudioPreprocessor> create_audio_preprocessor(xinfer::Target target);
 
 
-    std::unique_ptr<ITextPreprocessor> create_text_preprocessor(text::TokenizerType type) ;
+    // --- Text (NLP) ---
+    /**
+     * @brief Creates a Text Tokenizer.
+     * @param type The algorithm (BERT, BPE, etc.)
+     * @param target Platform (Use Target::NVIDIA_TRT to request cuBERT, otherwise CPU)
+     */
+    std::unique_ptr<ITextPreprocessor> create_text_preprocessor(
+        text::TokenizerType type,
+        xinfer::Target target = xinfer::Target::INTEL_OV // Default to CPU
+    );
 
+    // --- Tabular (SIEM) ---
+    /**
+     * @brief Creates a Tabular Preprocessor.
+     * @param target Use Target::NVIDIA_TRT for cuDF acceleration, otherwise CPU LogEncoder.
+     */
+    std::unique_ptr<ITabularPreprocessor> create_tabular_preprocessor(
+        xinfer::Target target = xinfer::Target::INTEL_OV // Default to CPU
+    );
 
 } // namespace xinfer::preproc

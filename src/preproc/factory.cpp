@@ -1,54 +1,51 @@
 #include <xinfer/preproc/factory.h>
+#include <xinfer/core/logging.h>
 
-// Include headers conditionally based on CMake flags
-#ifdef XINFER_ENABLE_CUDA
-  #include "image/cuda/cuda_image.h"
-  #include "audio/cuda/cufft_audio.h"
-#endif
-
-#ifdef XINFER_ENABLE_RKNN
-  #include "image/rga/rga_image.h"
-#endif
-
-#ifdef __APPLE__
-  #include "image/apple/metal_image.h"
-  #include "audio/apple/accelerate_audio.h"
-#endif
-
+// Universal Fallbacks
 #include "image/cpu/opencv_image.h"
-#include "audio/cpu/kissfft_audio.h"
+#include "audio/cpu/cpu_audio.h"
+
+// Conditional Headers
+#ifdef XINFER_HAS_CUDA
+#include "image/cuda/cuda_image.h"
+#endif
+
+#ifdef XINFER_HAS_RGA
+#include "image/rga/rga_image.h"
+#endif
 
 namespace xinfer::preproc {
 
     std::unique_ptr<IImagePreprocessor> create_image_preprocessor(Target target) {
-#ifdef XINFER_ENABLE_CUDA
-        if (target == Target::NVIDIA_TRT) return std::make_unique<CudaImagePreproc>();
+        // 1. NVIDIA GPU -> Use CUDA
+#ifdef XINFER_HAS_CUDA
+        if (target == Target::NVIDIA_TRT) {
+            XINFER_LOG_INFO("Using CUDA Preprocessor");
+            return std::make_unique<CudaImagePreprocessor>();
+        }
 #endif
 
-#ifdef XINFER_ENABLE_RKNN
-        if (target == Target::ROCKCHIP_RKNN) return std::make_unique<RgaImagePreproc>();
+        // 2. Rockchip NPU -> Use RGA (Hardware 2D Engine)
+#ifdef XINFER_HAS_RGA
+        if (target == Target::ROCKCHIP_RKNN) {
+            XINFER_LOG_INFO("Using Rockchip RGA Preprocessor");
+            return std::make_unique<RgaImagePreprocessor>();
+        }
 #endif
 
-#ifdef __APPLE__
-        if (target == Target::APPLE_COREML) return std::make_unique<MetalImagePreproc>();
-#endif
+        // 3. ARM Mobile -> Use NEON (TODO: Add NeonImagePreprocessor)
+        // #if defined(__aarch64__)
+        //     return std::make_unique<NeonImagePreprocessor>();
+        // #endif
 
-        // Default Fallback
-        return std::make_unique<OpenCVImagePreproc>();
+        // 4. Default -> OpenCV (CPU)
+        XINFER_LOG_INFO("Using CPU (OpenCV) Preprocessor");
+        return std::make_unique<OpenCVImagePreprocessor>();
     }
 
     std::unique_ptr<IAudioPreprocessor> create_audio_preprocessor(Target target) {
-#ifdef XINFER_ENABLE_CUDA
-        // Only use GPU for audio if batch size is huge, otherwise CPU is faster due to latency
-        if (target == Target::NVIDIA_TRT) return std::make_unique<CuFFTAudioPreproc>();
-#endif
-
-#ifdef __APPLE__
-        return std::make_unique<AccelerateAudioPreproc>();
-#endif
-
-        // Standard CPU Fallback (KissFFT or FFTW)
-        return std::make_unique<CpuAudioPreproc>();
+        // For now, CPU DSP is usually fast enough for audio
+        return std::make_unique<CpuAudioPreprocessor>();
     }
 
-}
+} // namespace xinfer::preproc

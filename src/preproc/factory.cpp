@@ -71,4 +71,18 @@ std::unique_ptr<IAudioPreprocessor> create_audio_preprocessor(Target target) {
     // 4. Generic Fallback (Intel/AMD CPU) -> KissFFT
     return std::make_unique<CpuAudioPreprocessor>();
 }
+
+    std::unique_ptr<ITextPreprocessor> create_text_preprocessor(text::TokenizerType type) {
+        switch (type) {
+            case text::TokenizerType::BERT_WORDPIECE:
+                return std::make_unique<text::BertTokenizer>();
+
+            case text::TokenizerType::GPT_BPE:
+                return std::make_unique<text::BpeTokenizer>();
+
+            default:
+                return std::make_unique<text::BertTokenizer>();
+        }
+    }
+
 } // namespace xinfer::preproc

@@ -5,88 +5,57 @@
 
 namespace xinfer::preproc {
 
-/**
- * @brief Pixel Format
- * Defines the layout of the input image data.
- */
-enum class ImageFormat {
-    // Standard CPU/OpenCV Formats
-    RGB = 0,
-    BGR = 1,
-    RGBA = 2,
-    BGRA = 3,
-    GRAY = 4,
+    /**
+     * @brief Audio Feature Type
+     * What kind of tensor should the preprocessor generate?
+     */
+    enum class AudioFeatureType {
+        RAW_WAVEFORM = 0,   // Just normalize float[-1, 1]
+        SPECTROGRAM = 1,    // STFT Magnitude
+        MEL_SPECTROGRAM = 2,// Mel-scale Frequency format (Most common for Audio AI)
+        MFCC = 3            // Mel-frequency cepstral coefficients (Speech Rec)
+    };
 
-    // Hardware Video Formats (Critical for Rockchip RGA / NVIDIA DeepStream)
-    NV12 = 5,  // YUV 4:2:0 Semi-Planar (Y plane + interleaved UV plane)
-    NV21 = 6,  // YUV 4:2:0 Semi-Planar (Y plane + interleaved VU plane)
-    YUV420P = 7 // Planar YUV (Y + U + V separate planes)
-};
+    /**
+     * @brief Window Function for FFT
+     * Controls spectral leakage.
+     */
+    enum class WindowType {
+        HANN = 0,     // Standard for Audio
+        HAMMING = 1,  // Standard for Speech
+        BLACKMAN = 2,
+        RECTANGULAR = 3
+    };
 
-/**
- * @brief Interpolation Mode for Resizing
- */
-enum class ResizeMode {
-    NEAREST = 0, // Fastest, blocky (Good for segmentation masks)
-    LINEAR = 1,  // Standard bilinear interpolation (Best balance)
-    CUBIC = 2,   // High quality, slower
-    AREA = 3     // Best for shrinking images (Moire reduction)
-};
+    /**
+     * @brief Configuration for Audio Preprocessing
+     *
+     * Defines how to turn PCM samples into a Tensor.
+     * Defaults are set to common Whisper/Speech-to-Text standards.
+     */
+    struct AudioPreprocConfig {
+        // --- Input Specs ---
+        int sample_rate = 16000;  // Expected SR (Resample if input differs)
+        int num_channels = 1;     // Models usually expect Mono
 
-/**
- * @brief Memory Location
- * Tells the preprocessor where the source data currently lives.
- */
-enum class MemoryLocation {
-    HOST_RAM = 0,       // Standard malloc/new
-    DEVICE_CUDA = 1,    // GPU VRAM (NVIDIA)
-    HOST_PINNED = 2,    // Pinned RAM (Faster PCIe transfer)
-    MAPPED_DMA = 3      // Zero-Copy Shared Mem (Rockchip/FPGA/Jetson)
-};
+        // --- Feature Extraction ---
+        AudioFeatureType feature_type = AudioFeatureType::MEL_SPECTROGRAM;
 
-/**
- * @brief Rectangle for Cropping
- */
-struct Rect {
-    int x = 0;
-    int y = 0;
-    int width = 0;
-    int height = 0;
-};
+        // FFT Parameters
+        int n_fft = 400;          // Window size (e.g., 25ms at 16kHz)
+        int hop_length = 160;     // Stride (e.g., 10ms at 16kHz)
+        WindowType window_type = WindowType::HANN;
 
-/**
- * @brief Normalization Parameters
- * Used to convert [0, 255] uint8 -> [-1, 1] or [0, 1] float.
- * Formula: dst = (src - mean) / std
- */
-struct NormalizeParams {
-    std::vector<float> mean = {0.0f, 0.0f, 0.0f};
-    std::vector<float> std  = {1.0f, 1.0f, 1.0f};
-    float scale_factor = 1.0f / 255.0f; // Global scaler (e.g., 1/255)
-};
+        // Mel Scale Parameters
+        int n_mels = 80;          // Number of Mel bands (Height of output tensor)
+        float fmin = 0.0f;
+        float fmax = 8000.0f;     // Nyquist frequency usually
 
-/**
- * @brief Configuration for Image Preprocessing Request
- */
-struct ImagePreprocConfig {
-    // Target Dimensions
-    int target_width;
-    int target_height;
+        // MFCC Parameters (Only if type == MFCC)
+        int n_mfcc = 13;          // Standard is 13 or 40
 
-    // Target Format (usually RGB for models)
-    ImageFormat target_format = ImageFormat::RGB;
-
-    // Operations
-    ResizeMode resize_mode = ResizeMode::LINEAR;
-    bool do_normalize = true;
-    NormalizeParams norm_params;
-
-    // Optional: Crop before resize?
-    bool do_crop = false;
-    Rect crop_rect;
-
-    // Layout: True = NCHW (PyTorch/TensorRT), False = NHWC (TFLite/Rockchip)
-    bool layout_nchw = true;
-};
+        // Normalization
+        bool log_mel = true;      // Apply Log(1 + X) to Mel Spectrogram? (Critical for AI)
+    };
 
 } // namespace xinfer::preproc

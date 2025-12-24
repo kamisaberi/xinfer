@@ -1,0 +1,8 @@
+//
+// Created by kami on 12/24/2025.
+//
+
+#ifndef XINFER_SAMPLER_INTERFACE_H
+#define XINFER_SAMPLER_INTERFACE_H
+
+#endif //XINFER_SAMPLER_INTERFACE_H

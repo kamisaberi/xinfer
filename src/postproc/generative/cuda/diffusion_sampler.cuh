@@ -1,0 +1,8 @@
+//
+// Created by kami on 12/24/2025.
+//
+
+#ifndef XINFER_DIFFUSION_SAMPLER_CUH
+#define XINFER_DIFFUSION_SAMPLER_CUH
+
+#endif //XINFER_DIFFUSION_SAMPLER_CUH

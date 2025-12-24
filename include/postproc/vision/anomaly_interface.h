@@ -1,0 +1,8 @@
+//
+// Created by kami on 12/24/2025.
+//
+
+#ifndef XINFER_ANOMALY_INTERFACE_H
+#define XINFER_ANOMALY_INTERFACE_H
+
+#endif //XINFER_ANOMALY_INTERFACE_H

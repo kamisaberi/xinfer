@@ -9,9 +9,12 @@
 #include <xinfer/postproc/vision/instance_seg_interface.h>
 #include <xinfer/postproc/vision/anomaly_interface.h>
 #include <xinfer/postproc/vision/detection3d_interface.h>
+#include <xinfer/postproc/vision/classification_interface.h>
+#include <xinfer/postproc/vision/tracker_interface.h>
 
 // --- Text Interfaces ---
 #include <xinfer/postproc/text/ocr_interface.h>
+#include <xinfer/postproc/text/llm_sampler_interface.h>
 
 // --- Generative Interfaces ---
 #include <xinfer/postproc/generative/sampler_interface.h>
@@ -19,64 +22,52 @@
 namespace xinfer::postproc {
 
 /**
- * @brief Factory for Post-Processing Modules.
+ * @brief Post-Processing Factory
  *
- * Automatically selects the most efficient implementation based on the
- * Target hardware.
+ * Central switchboard for creating hardware-accelerated post-processors.
  *
  * Logic:
- * - If Target == NVIDIA_TRT -> Returns CUDA implementations (keeps data on GPU).
- * - If Target == APPLE_COREML -> Returns Metal implementations (if available).
- * - Else -> Returns optimized CPU implementations (OpenCV/NEON/AVX).
+ * - Checks the requested Target (NVIDIA, Rockchip, CPU, etc.).
+ * - Returns the specialized implementation if available (e.g., CUDA).
+ * - Falls back to optimized CPU implementation (OpenCV/AVX/NEON) otherwise.
  */
 
-// --- Vision ---
+// ================= Vision =================
 
-/**
- * @brief Creates a Detection Post-processor (YOLO, SSD).
- * Performs decoding and NMS.
- */
+// YOLO / SSD Decoding & NMS
 std::unique_ptr<IDetectionPostprocessor> create_detection(xinfer::Target target);
 
-/**
- * @brief Creates a Semantic Segmentation Post-processor.
- * Performs ArgMax and resizing.
- */
+// Semantic Segmentation (ArgMax + Resize)
 std::unique_ptr<ISegmentationPostprocessor> create_segmentation(xinfer::Target target);
 
-/**
- * @brief Creates an Instance Segmentation Post-processor.
- * Decodes masks and bounding boxes (Mask R-CNN / YOLO-Seg).
- */
+// Instance Segmentation (Mask Assembly)
 std::unique_ptr<IInstanceSegmentationPostprocessor> create_instance_segmentation(xinfer::Target target);
 
-/**
- * @brief Creates an Anomaly Detection Post-processor.
- * Calculates heatmaps/MSE between input and reconstruction.
- */
+// Anomaly Detection (Reconstruction Error)
 std::unique_ptr<IAnomalyPostprocessor> create_anomaly(xinfer::Target target);
 
-/**
- * @brief Creates a 3D Detection Post-processor (LiDAR/PointPillars).
- */
+// 3D Object Detection (Lidar/PointPillars)
 std::unique_ptr<IDetection3DPostprocessor> create_detection3d(xinfer::Target target);
 
+// Classification (Top-K)
+std::unique_ptr<IClassificationPostprocessor> create_classification(xinfer::Target target);
 
-// --- Text ---
+// Object Tracking (Kalman/SORT)
+std::unique_ptr<ITracker> create_tracker(xinfer::Target target);
 
-/**
- * @brief Creates an OCR/CTC Decoder.
- * Decodes probabilities into strings (Greedy/Beam Search).
- */
+
+// ================= Text =================
+
+// OCR / Speech Decoding (CTC)
 std::unique_ptr<IOcrPostprocessor> create_ocr(xinfer::Target target);
 
+// LLM Token Sampling (Top-P/Top-K)
+std::unique_ptr<ILlmSampler> create_llm_sampler(xinfer::Target target);
 
-// --- Generative ---
 
-/**
- * @brief Creates a Diffusion Sampler.
- * Handles noise scheduling and sampling steps.
- */
+// ================= Generative =================
+
+// Diffusion Model Sampling (DDIM)
 std::unique_ptr<ISamplerPostprocessor> create_sampler(xinfer::Target target);
 
 } // namespace xinfer::postproc

@@ -1,0 +1,8 @@
+//
+// Created by kami on 12/25/2025.
+//
+
+#ifndef XINFER_CLASSIFICATION_CPU_H
+#define XINFER_CLASSIFICATION_CPU_H
+
+#endif //XINFER_CLASSIFICATION_CPU_H

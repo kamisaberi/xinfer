@@ -5,35 +5,81 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 
-namespace xinfer::core { class Tensor; }
-namespace xinfer::preproc { class ImageProcessor; }
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
+#include <xinfer/postproc/vision/types.h> // For BoundingBox
 
 namespace xinfer::zoo::medical {
 
-    struct CellSegmentationResult {
-        int cell_count;
-        cv::Mat instance_mask; // Each cell instance has a unique integer ID
-        std::vector<std::vector<cv::Point>> contours;
+    /**
+     * @brief A single segmented cell.
+     */
+    struct CellObject {
+        int id;
+        postproc::BoundingBox box;
+        cv::Mat mask;           // Binary mask for this specific cell
+
+        // Morphological Metrics
+        float area_pixels;      // Raw pixel count
+        float area_microns;     // Calibrated size
+        float circularity;      // 1.0 = perfect circle, < 0.5 = irregular
+        float mean_intensity;   // Brightness (for fluorescence markers)
     };
 
-    struct CellSegmenterConfig {
-        std::string engine_path;
-        int input_width = 512;
-        int input_height = 512;
-        float probability_threshold = 0.5f;
+    struct CellResult {
+        std::vector<CellObject> cells;
+        int total_count;
+        float average_size_microns;
+        cv::Mat segmentation_overlay; // Visual debug image
+    };
+
+    struct CellConfig {
+        // Hardware Target
+        xinfer::Target target = xinfer::Target::INTEL_OV;
+
+        // Model Path (e.g., cellpose_yolo.engine)
+        std::string model_path;
+
+        // Input Specs
+        int input_width = 640;
+        int input_height = 640;
+
+        // Calibration
+        float microns_per_pixel = 0.5f;
+
+        // Thresholds
+        float conf_threshold = 0.5f;
+        float nms_threshold = 0.4f;
+        float min_area_px = 20.0f; // Ignore noise/debris
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class CellSegmenter {
     public:
-        explicit CellSegmenter(const CellSegmenterConfig& config);
+        explicit CellSegmenter(const CellConfig& config);
         ~CellSegmenter();
 
-        CellSegmenter(const CellSegmenter&) = delete;
-        CellSegmenter& operator=(const CellSegmenter&) = delete;
+        // Move semantics
         CellSegmenter(CellSegmenter&&) noexcept;
         CellSegmenter& operator=(CellSegmenter&&) noexcept;
+        CellSegmenter(const CellSegmenter&) = delete;
+        CellSegmenter& operator=(const CellSegmenter&) = delete;
 
-        CellSegmentationResult predict(const cv::Mat& microscope_image);
+        /**
+         * @brief Segment and analyze cells in a microscopy image.
+         *
+         * Pipeline:
+         * 1. Preprocess (Normalization).
+         * 2. Inference (Instance Segmentation).
+         * 3. Postprocess (Mask decoding).
+         * 4. Morphometrics (Area, Circularity calc).
+         *
+         * @param image Input image (Gray or RGB).
+         * @return Detection results and stats.
+         */
+        CellResult segment(const cv::Mat& image);
 
     private:
         struct Impl;
@@ -41,4 +87,3 @@ namespace xinfer::zoo::medical {
     };
 
 } // namespace xinfer::zoo::medical
-

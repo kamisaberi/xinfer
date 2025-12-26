@@ -1,89 +1,143 @@
-#include <include/zoo/nlp/classifier.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
-#include <numeric>
-#include <algorithm>
-#include <cmath>
+#include <xinfer/zoo/nlp/classifier.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+#include <xinfer/postproc/factory.h>
+#include <xinfer/postproc/vision/classification_interface.h>
+
+#include <fstream>
+#include <iostream>
 
 namespace xinfer::zoo::nlp {
 
-struct Classifier::Impl {
-    ClassifierConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    // std::unique_ptr<preproc::Tokenizer> tokenizer_;
-    std::vector<std::string> class_labels_;
-};
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
-Classifier::Classifier(const ClassifierConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("NLP classifier engine file not found: " + pimpl_->config_.engine_path);
+struct TextClassifier::Impl {
+    TextClassifierConfig config_;
+
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+    std::unique_ptr<preproc::ITextPreprocessor> tokenizer_;
+    std::unique_ptr<postproc::IClassificationPostprocessor> postproc_;
+
+    // Data Containers
+    core::Tensor input_ids;
+    core::Tensor attention_mask;
+    core::Tensor output_logits;
+
+    // Labels
+    std::vector<std::string> labels_;
+
+    Impl(const TextClassifierConfig& config) : config_(config) {
+        initialize();
     }
 
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-    // pimpl_->tokenizer_ = std::make_unique<preproc::Tokenizer>(pimpl_->config_.vocab_path);
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
 
-    if (!pimpl_->config_.labels_path.empty()) {
-        std::ifstream labels_file(pimpl_->config_.labels_path);
-        if (!labels_file) throw std::runtime_error("Could not open labels file: " + pimpl_->config_.labels_path);
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("TextClassifier: Failed to load model " + config_.model_path);
+        }
+
+        // 2. Setup Tokenizer (Preproc)
+        // Defaulting to BERT WordPiece for standard classifiers.
+        // Could be made configurable if using RoBERTa (BPE).
+        tokenizer_ = preproc::create_text_preprocessor(preproc::text::TokenizerType::BERT_WORDPIECE, config_.target);
+
+        preproc::text::TokenizerConfig tok_cfg;
+        tok_cfg.vocab_path = config_.vocab_path;
+        tok_cfg.max_length = config_.max_sequence_length;
+        tok_cfg.do_lower_case = config_.do_lower_case;
+        tokenizer_->init(tok_cfg);
+
+        // 3. Setup Post-processor
+        // We reuse the generic classification logic (Softmax + TopK)
+        postproc_ = postproc::create_classification(config_.target);
+
+        postproc::ClassificationConfig post_cfg;
+        post_cfg.top_k = config_.top_k;
+        post_cfg.apply_softmax = true; // NLP models usually output raw logits
+
+        if (!config_.labels_path.empty()) {
+            load_labels(config_.labels_path);
+            post_cfg.labels = labels_;
+        }
+
+        postproc_->init(post_cfg);
+    }
+
+    void load_labels(const std::string& path) {
+        std::ifstream file(path);
+        if (!file.is_open()) {
+            XINFER_LOG_WARN("Could not open labels file: " + path);
+            return;
+        }
         std::string line;
-        while (std::getline(labels_file, line)) {
-            pimpl_->class_labels_.push_back(line);
+        while (std::getline(file, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            labels_.push_back(line);
         }
     }
-}
+};
 
-Classifier::~Classifier() = default;
-Classifier::Classifier(Classifier&&) noexcept = default;
-Classifier& Classifier::operator=(Classifier&&) noexcept = default;
+// =================================================================================
+// Public API
+// =================================================================================
 
-std::vector<TextClassificationResult> Classifier::predict(const std::string& text, int top_k) {
-    if (!pimpl_) throw std::runtime_error("Classifier is in a moved-from state.");
+TextClassifier::TextClassifier(const TextClassifierConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
-    // std::vector<int64_t> token_ids = pimpl_->tokenizer_->encode(text);
-    // token_ids.resize(pimpl_->config_.max_sequence_length, 0); // Pad or truncate
+TextClassifier::~TextClassifier() = default;
+TextClassifier::TextClassifier(TextClassifier&&) noexcept = default;
+TextClassifier& TextClassifier::operator=(TextClassifier&&) noexcept = default;
 
-    // auto input_shape = pimpl_->engine_->get_input_shape(0);
-    // input_shape[0] = 1;
-    // input_shape[1] = pimpl_->config_.max_sequence_length;
+std::vector<TextClassResult> TextClassifier::classify(const std::string& text) {
+    if (!pimpl_) throw std::runtime_error("TextClassifier is null.");
 
-    // core::Tensor input_tensor(input_shape, core::DataType::kINT32);
-    // input_tensor.copy_from_host(token_ids.data());
+    // 1. Tokenize
+    pimpl_->tokenizer_->process(text, pimpl_->input_ids, pimpl_->attention_mask);
 
-    // auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    // const core::Tensor& logits_tensor = output_tensors[0];
+    // 2. Inference
+    // Standard BERT input: {input_ids, attention_mask}
+    // Some models may require token_type_ids, but for single sentence classification
+    // it's usually 0 and often optional in exported ONNX.
+    pimpl_->engine_->predict({pimpl_->input_ids, pimpl_->attention_mask}, {pimpl_->output_logits});
 
-    // std::vector<float> logits(logits_tensor.num_elements());
-    // logits_tensor.copy_to_host(logits.data());
+    // 3. Postprocess
+    auto raw_results = pimpl_->postproc_->process(pimpl_->output_logits);
 
-    // std::vector<int> indices(logits.size());
-    // std::iota(indices.begin(), indices.end(), 0);
+    std::vector<TextClassResult> results;
+    if (!raw_results.empty()) {
+        const auto& batch_res = raw_results[0]; // Batch size 1
+        results.reserve(batch_res.size());
 
-    // std::partial_sort(indices.begin(), indices.begin() + top_k, indices.end(),
-    //                   [&](int a, int b) { return logits[a] > logits[b]; });
+        for (const auto& item : batch_res) {
+            TextClassResult res;
+            res.id = item.id;
+            res.confidence = item.score;
+            res.label = item.label;
 
-    // float max_logit = logits[indices[0]];
-    // float sum_exp = 0.0f;
-    // std::vector<float> top_k_probs;
-    // for (int i = 0; i < top_k; ++i) {
-    //     float prob = std::exp(logits[indices[i]] - max_logit);
-    //     top_k_probs.push_back(prob);
-    //     sum_exp += prob;
-    // }
-
-    std::vector<TextClassificationResult> results;
-    // for (int i = 0; i < top_k; ++i) {
-    //     int class_id = indices[i];
-    //     float confidence = top_k_probs[i] / sum_exp;
-    //     std::string label = pimpl_->class_labels_.empty() || class_id >= pimpl_->class_labels_.size() ?
-    //                         "Class " + std::to_string(class_id) :
-    //                         pimpl_->class_labels_[class_id];
-    //     results.push_back({class_id, confidence, label});
-    // }
+            // Fallback label generation if file wasn't provided
+            if (res.label.empty()) {
+                if (item.id < (int)pimpl_->labels_.size()) {
+                    res.label = pimpl_->labels_[item.id];
+                } else {
+                    res.label = "Class_" + std::to_string(item.id);
+                }
+            }
+            results.push_back(res);
+        }
+    }
 
     return results;
 }

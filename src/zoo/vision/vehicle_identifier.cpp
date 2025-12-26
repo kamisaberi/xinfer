@@ -1,124 +1,223 @@
-#include <include/zoo/vision/vehicle_identifier.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
-#include <numeric>
-#include <algorithm>
+#include <xinfer/zoo/vision/vehicle_identifier.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+#include <xinfer/postproc/factory.h>
+#include <xinfer/postproc/vision/classification_interface.h>
+
+#include <fstream>
+#include <iostream>
+#include <set>
 
 namespace xinfer::zoo::vision {
 
-void load_labels(const std::string& path, std::vector<std::string>& labels) {
-    if (path.empty()) return;
-    std::ifstream file(path);
-    if (!file) throw std::runtime_error("Could not open labels file: " + path);
-    std::string line;
-    while (std::getline(file, line)) {
-        labels.push_back(line);
-    }
-}
-
-std::pair<int, float> get_top1(const float* logits, int num_classes) {
-    auto max_it = std::max_element(logits, logits + num_classes);
-    int max_idx = std::distance(logits, max_it);
-    float max_val = *max_it;
-
-    float sum_exp = 0.0f;
-    for (int i = 0; i < num_classes; ++i) {
-        sum_exp += expf(logits[i] - max_val);
-    }
-    float confidence = 1.0f / sum_exp;
-
-    return {max_idx, confidence};
-}
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
 struct VehicleIdentifier::Impl {
     VehicleIdentifierConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_;
-    std::vector<std::string> type_labels_;
-    std::vector<std::string> color_labels_;
-    std::vector<std::string> make_labels_;
-    std::vector<std::string> model_labels_;
+
+    // --- Stage 1: Detector ---
+    std::unique_ptr<backends::IBackend> det_engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> det_preproc_;
+    std::unique_ptr<postproc::IDetectionPostprocessor> det_postproc_;
+    core::Tensor det_input, det_output;
+    std::vector<std::string> det_labels_;
+    std::set<int> vehicle_class_ids_; // IDs for Car, Truck, Bus, Bike
+
+    // --- Stage 2: Classifier ---
+    std::unique_ptr<backends::IBackend> attr_engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> attr_preproc_;
+    std::unique_ptr<postproc::IClassificationPostprocessor> attr_postproc_;
+    core::Tensor attr_input, attr_output;
+    std::vector<std::string> attr_labels_;
+
+    Impl(const VehicleIdentifierConfig& config) : config_(config) {
+        initialize();
+    }
+
+    void initialize() {
+        // ---------------------------------------------------------
+        // 1. Setup Detector
+        // ---------------------------------------------------------
+        det_engine_ = backends::BackendFactory::create(config_.target);
+
+        xinfer::Config det_backend_cfg;
+        det_backend_cfg.model_path = config_.det_model_path;
+        det_backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!det_engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("VehicleIdentifier: Failed to load detector " + config_.det_model_path);
+        }
+
+        det_preproc_ = preproc::create_image_preprocessor(config_.target);
+        preproc::ImagePreprocConfig det_pre_cfg;
+        det_pre_cfg.target_width = config_.det_input_width;
+        det_pre_cfg.target_height = config_.det_input_height;
+        det_pre_cfg.target_format = preproc::ImageFormat::RGB;
+        det_pre_cfg.layout_nchw = true;
+        det_preproc_->init(det_pre_cfg);
+
+        det_postproc_ = postproc::create_detection(config_.target);
+        postproc::DetectionConfig det_post_cfg;
+        det_post_cfg.conf_threshold = config_.det_conf_thresh;
+        det_post_cfg.nms_threshold = config_.det_nms_thresh;
+        det_postproc_->init(det_post_cfg);
+
+        load_labels(config_.det_labels_path, det_labels_);
+
+        // Identify which IDs are vehicles (Simple heuristic based on standard COCO names)
+        for (size_t i = 0; i < det_labels_.size(); ++i) {
+            std::string l = det_labels_[i];
+            // Normalize string to lower case if needed
+            if (l == "car" || l == "truck" || l == "bus" || l == "motorcycle") {
+                vehicle_class_ids_.insert(i);
+            }
+        }
+        // If no labels provided, assume standard COCO indices: 2, 5, 7, 3
+        if (det_labels_.empty()) {
+            vehicle_class_ids_ = {2, 3, 5, 7};
+        }
+
+        // ---------------------------------------------------------
+        // 2. Setup Attribute Classifier (Optional)
+        // ---------------------------------------------------------
+        if (!config_.attr_model_path.empty()) {
+            attr_engine_ = backends::BackendFactory::create(config_.target);
+            xinfer::Config attr_backend_cfg;
+            attr_backend_cfg.model_path = config_.attr_model_path;
+
+            if (!attr_engine_->load_model(attr_backend_cfg.model_path)) {
+                XINFER_LOG_WARN("Failed to load attribute model. Running detection only.");
+                return;
+            }
+
+            attr_preproc_ = preproc::create_image_preprocessor(config_.target);
+            preproc::ImagePreprocConfig attr_pre_cfg;
+            attr_pre_cfg.target_width = config_.attr_input_width;
+            attr_pre_cfg.target_height = config_.attr_input_height;
+            attr_pre_cfg.target_format = preproc::ImageFormat::RGB;
+            // Standard ImageNet normalization for classifiers
+            attr_pre_cfg.norm_params = {{123.675, 116.28, 103.53}, {58.395, 57.12, 57.375}};
+            attr_preproc_->init(attr_pre_cfg);
+
+            attr_postproc_ = postproc::create_classification(config_.target);
+            postproc::ClassificationConfig cls_cfg;
+            cls_cfg.top_k = 1;
+            load_labels(config_.attr_labels_path, attr_labels_);
+            cls_cfg.labels = attr_labels_;
+            attr_postproc_->init(cls_cfg);
+        }
+    }
+
+    void load_labels(const std::string& path, std::vector<std::string>& list) {
+        if (path.empty()) return;
+        std::ifstream file(path);
+        if (!file.is_open()) return;
+        std::string line;
+        while (std::getline(file, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            list.push_back(line);
+        }
+    }
 };
 
+// =================================================================================
+// Public API
+// =================================================================================
+
 VehicleIdentifier::VehicleIdentifier(const VehicleIdentifierConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Vehicle identification engine file not found: " + pimpl_->config_.engine_path);
-    }
-
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-
-    if (pimpl_->engine_->get_num_outputs() != 4) {
-        throw std::runtime_error("Vehicle identification engine must have exactly four outputs (type, color, make, model).");
-    }
-
-    pimpl_->preprocessor_ = std::make_unique<preproc::ImageProcessor>(
-        pimpl_->config_.input_width,
-        pimpl_->config_.input_height,
-        std::vector<float>{0.485f, 0.456f, 0.406f},
-        std::vector<float>{0.229f, 0.224f, 0.225f}
-    );
-
-    load_labels(pimpl_->config_.type_labels_path, pimpl_->type_labels_);
-    load_labels(pimpl_->config_.color_labels_path, pimpl_->color_labels_);
-    load_labels(pimpl_->config_.make_labels_path, pimpl_->make_labels_);
-    load_labels(pimpl_->config_.model_labels_path, pimpl_->model_labels_);
-}
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 VehicleIdentifier::~VehicleIdentifier() = default;
 VehicleIdentifier::VehicleIdentifier(VehicleIdentifier&&) noexcept = default;
 VehicleIdentifier& VehicleIdentifier::operator=(VehicleIdentifier&&) noexcept = default;
 
-VehicleAttributes VehicleIdentifier::predict(const cv::Mat& vehicle_image) {
-    if (!pimpl_) throw std::runtime_error("VehicleIdentifier is in a moved-from state.");
+std::vector<VehicleResult> VehicleIdentifier::identify(const cv::Mat& image) {
+    if (!pimpl_) throw std::runtime_error("VehicleIdentifier is null.");
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(vehicle_image, input_tensor);
+    std::vector<VehicleResult> results;
 
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
+    // --- 1. Detection ---
+    preproc::ImageFrame frame;
+    frame.data = image.data;
+    frame.width = image.cols;
+    frame.height = image.rows;
+    frame.format = preproc::ImageFormat::BGR;
 
-    const core::Tensor& type_logits_tensor = output_tensors[0];
-    const core::Tensor& color_logits_tensor = output_tensors[1];
-    const core::Tensor& make_logits_tensor = output_tensors[2];
-    const core::Tensor& model_logits_tensor = output_tensors[3];
+    pimpl_->det_preproc_->process(frame, pimpl_->det_input);
+    pimpl_->det_engine_->predict({pimpl_->det_input}, {pimpl_->det_output});
 
-    std::vector<float> h_type(type_logits_tensor.num_elements());
-    type_logits_tensor.copy_to_host(h_type.data());
+    auto detections = pimpl_->det_postproc_->process({pimpl_->det_output});
 
-    std::vector<float> h_color(color_logits_tensor.num_elements());
-    color_logits_tensor.copy_to_host(h_color.data());
+    // Scale factors
+    float scale_x = (float)image.cols / pimpl_->config_.det_input_width;
+    float scale_y = (float)image.rows / pimpl_->config_.det_input_height;
 
-    std::vector<float> h_make(make_logits_tensor.num_elements());
-    make_logits_tensor.copy_to_host(h_make.data());
+    for (const auto& det : detections) {
+        // Filter: Is this a vehicle?
+        if (pimpl_->vehicle_class_ids_.find(det.class_id) == pimpl_->vehicle_class_ids_.end()) {
+            if (!pimpl_->det_labels_.empty()) continue; // Skip if labels known and not vehicle
+        }
 
-    std::vector<float> h_model(model_logits_tensor.num_elements());
-    model_logits_tensor.copy_to_host(h_model.data());
+        VehicleResult res;
 
-    VehicleAttributes attrs;
+        // Scale Box
+        res.box.x1 = det.x1 * scale_x;
+        res.box.y1 = det.y1 * scale_y;
+        res.box.x2 = det.x2 * scale_x;
+        res.box.y2 = det.y2 * scale_y;
+        res.box.confidence = det.confidence;
 
-    auto top1_type = get_top1(h_type.data(), h_type.size());
-    attrs.type_confidence = top1_type.second;
-    attrs.type = (top1_type.first < pimpl_->type_labels_.size()) ? pimpl_->type_labels_[top1_type.first] : "Unknown";
+        if (det.class_id < (int)pimpl_->det_labels_.size()) {
+            res.type = pimpl_->det_labels_[det.class_id];
+        } else {
+            res.type = "Vehicle";
+        }
 
-    auto top1_color = get_top1(h_color.data(), h_color.size());
-    attrs.color_confidence = top1_color.second;
-    attrs.color = (top1_color.first < pimpl_->color_labels_.size()) ? pimpl_->color_labels_[top1_color.first] : "Unknown";
+        // --- 2. Attribute Classification (Optional) ---
+        if (pimpl_->attr_engine_) {
+            // Crop Vehicle
+            cv::Rect roi(
+                (int)std::max(0.0f, res.box.x1),
+                (int)std::max(0.0f, res.box.y1),
+                (int)(res.box.x2 - res.box.x1),
+                (int)(res.box.y2 - res.box.y1)
+            );
 
-    auto top1_make = get_top1(h_make.data(), h_make.size());
-    attrs.make_confidence = top1_make.second;
-    attrs.make = (top1_make.first < pimpl_->make_labels_.size()) ? pimpl_->make_labels_[top1_make.first] : "Unknown";
+            // Bounds Check
+            roi &= cv::Rect(0, 0, image.cols, image.rows);
 
-    auto top1_model = get_top1(h_model.data(), h_model.size());
-    attrs.model_confidence = top1_model.second;
-    attrs.model = (top1_model.first < pimpl_->model_labels_.size()) ? pimpl_->model_labels_[top1_model.first] : "Unknown";
+            if (roi.width > 10 && roi.height > 10) {
+                cv::Mat crop = image(roi);
 
-    return attrs;
+                // Preprocess Crop
+                preproc::ImageFrame crop_frame{crop.data, crop.cols, crop.rows, preproc::ImageFormat::BGR};
+                pimpl_->attr_preproc_->process(crop_frame, pimpl_->attr_input);
+
+                // Inference
+                pimpl_->attr_engine_->predict({pimpl_->attr_input}, {pimpl_->attr_output});
+
+                // Postprocess
+                auto attrs = pimpl_->attr_postproc_->process(pimpl_->attr_output);
+
+                if (!attrs.empty() && !attrs[0].empty()) {
+                    res.make_model = attrs[0][0].label;
+                    res.attr_confidence = attrs[0][0].score;
+                    // Note: Color might need a secondary model or a multi-head output parsing
+                    // here we assume the classifier returns Make/Model.
+                }
+            }
+        }
+
+        results.push_back(res);
+    }
+
+    return results;
 }
 
 } // namespace xinfer::zoo::vision

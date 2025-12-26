@@ -1,79 +1,196 @@
-#include <include/zoo/generative/super_resolution.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
+#include <xinfer/zoo/generative/super_resolution.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+
+#include <iostream>
+#include <algorithm>
 
 namespace xinfer::zoo::generative {
 
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
+
 struct SuperResolution::Impl {
     SuperResolutionConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_;
-};
 
-SuperResolution::SuperResolution(const SuperResolutionConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Super resolution engine file not found: " + pimpl_->config_.engine_path);
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> preproc_;
+
+    // Data Containers
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
+
+    Impl(const SuperResolutionConfig& config) : config_(config) {
+        initialize();
     }
 
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
 
-    pimpl_->preprocessor_ = std::make_unique<preproc::ImageProcessor>(
-        pimpl_->config_.input_width,
-        pimpl_->config_.input_height,
-        // ESRGAN models typically expect [0,1] range
-        std::vector<float>{0.0f, 0.0f, 0.0f},
-        std::vector<float>{1.0f, 1.0f, 1.0f}
-    );
-}
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("SuperResolution: Failed to load model " + config_.model_path);
+        }
+
+        // 2. Setup Preprocessor
+        preproc_ = preproc::create_image_preprocessor(config_.target);
+
+        preproc::ImagePreprocConfig pre_cfg;
+        // Preprocessor config is minimal; it's mostly used for normalization and layout.
+        // Resizing is handled by the tiling logic.
+        pre_cfg.target_format = preproc::ImageFormat::RGB;
+        pre_cfg.layout_nchw = true;
+        // Real-ESRGAN usually takes raw 0-255 float inputs
+        pre_cfg.norm_params.scale_factor = 1.0f;
+        preproc_->init(pre_cfg);
+    }
+
+    // --- Post-processing: Tensor -> Image ---
+    cv::Mat tensor_to_image(const core::Tensor& tensor) {
+        // Output: [1, 3, H, W] in range [0, 255]
+        auto shape = tensor.shape();
+        int h = (int)shape[2];
+        int w = (int)shape[3];
+        int spatial = h * w;
+
+        const float* data = static_cast<const float*>(tensor.data());
+        cv::Mat result(h, w, CV_8UC3);
+        uint8_t* ptr = result.data;
+
+        // NCHW -> HWC + Clamp
+        for (int i = 0; i < spatial; ++i) {
+            float r = data[0 * spatial + i];
+            float g = data[1 * spatial + i];
+            float b = data[2 * spatial + i];
+
+            ptr[i * 3 + 0] = (uint8_t)std::clamp(b, 0.0f, 255.0f);
+            ptr[i * 3 + 1] = (uint8_t)std::clamp(g, 0.0f, 255.0f);
+            ptr[i * 3 + 2] = (uint8_t)std::clamp(r, 0.0f, 255.0f);
+        }
+        return result;
+    }
+
+    // --- Core Tiling Logic ---
+    cv::Mat process_with_tiling(const cv::Mat& lr_image) {
+        int input_w = lr_image.cols;
+        int input_h = lr_image.rows;
+
+        // Output dimensions
+        int output_w = input_w * config_.scale;
+        int output_h = input_h * config_.scale;
+        cv::Mat output_image = cv::Mat::zeros(output_h, output_w, CV_8UC3);
+
+        int tile_size = config_.tile_size;
+        int pad = config_.tile_pad;
+
+        // Iterate over image tiles
+        for (int y = 0; y < input_h; y += tile_size) {
+            for (int x = 0; x < input_w; x += tile_size) {
+                // 1. Extract Tile with Padding
+                int x1 = std::max(0, x - pad);
+                int y1 = std::max(0, y - pad);
+                int x2 = std::min(input_w, x + tile_size + pad);
+                int y2 = std::min(input_h, y + tile_size + pad);
+
+                cv::Mat tile = lr_image(cv::Rect(x1, y1, x2 - x1, y2 - y1));
+
+                // 2. Preprocess Tile
+                preproc::ImageFrame frame{tile.data, tile.cols, tile.rows, preproc::ImageFormat::BGR};
+
+                // Set dynamic target size for preprocessor
+                preproc::ImagePreprocConfig cfg;
+                cfg.target_width = tile.cols;
+                cfg.target_height = tile.rows;
+                preproc_->init(cfg);
+
+                preproc_->process(frame, input_tensor);
+
+                // 3. Inference on Tile
+                engine_->predict({input_tensor}, {output_tensor});
+
+                // 4. Postprocess Tile
+                cv::Mat sr_tile = tensor_to_image(output_tensor);
+
+                // 5. Stitch into Output Image
+                // We need to calculate the ROI to copy, removing the padded borders
+                int roi_x_start = (x > 0) ? (pad * config_.scale) : 0;
+                int roi_y_start = (y > 0) ? (pad * config_.scale) : 0;
+
+                int roi_width = tile_size * config_.scale;
+                int roi_height = tile_size * config_.scale;
+
+                // Clamp to sr_tile boundaries
+                if (roi_x_start + roi_width > sr_tile.cols) roi_width = sr_tile.cols - roi_x_start;
+                if (roi_y_start + roi_height > sr_tile.rows) roi_height = sr_tile.rows - roi_y_start;
+
+                // Destination ROI in final image
+                int dest_x = x * config_.scale;
+                int dest_y = y * config_.scale;
+
+                if (dest_x + roi_width > output_w) roi_width = output_w - dest_x;
+                if (dest_y + roi_height > output_h) roi_height = output_h - dest_y;
+
+                if(roi_width <= 0 || roi_height <= 0) continue;
+
+                cv::Rect src_roi(roi_x_start, roi_y_start, roi_width, roi_height);
+                cv::Rect dst_roi(dest_x, dest_y, roi_width, roi_height);
+
+                sr_tile(src_roi).copyTo(output_image(dst_roi));
+            }
+        }
+
+        return output_image;
+    }
+};
+
+// =================================================================================
+// Public API
+// =================================================================================
+
+SuperResolution::SuperResolution(const SuperResolutionConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 SuperResolution::~SuperResolution() = default;
 SuperResolution::SuperResolution(SuperResolution&&) noexcept = default;
 SuperResolution& SuperResolution::operator=(SuperResolution&&) noexcept = default;
 
-cv::Mat SuperResolution::predict(const cv::Mat& low_res_image) {
-    if (!pimpl_) throw std::runtime_error("SuperResolution is in a moved-from state.");
+cv::Mat SuperResolution::upscale(const cv::Mat& lr_image) {
+    if (!pimpl_) throw std::runtime_error("SuperResolution is null.");
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(low_res_image, input_tensor);
+    // Simple path (no tiling)
+    bool use_tiling = lr_image.cols > pimpl_->config_.tile_size || lr_image.rows > pimpl_->config_.tile_size;
 
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& high_res_tensor = output_tensors[0];
+    if (!use_tiling) {
+        // 1. Preprocess
+        preproc::ImageFrame frame;
+        frame.data = lr_image.data;
+        frame.width = lr_image.cols;
+        frame.height = lr_image.rows;
+        frame.format = preproc::ImageFormat::BGR;
 
-    auto output_shape = high_res_tensor.shape();
-    const int C = output_shape[1];
-    const int H = output_shape[2];
-    const int W = output_shape[3];
+        pimpl_->preproc_->init({lr_image.cols, lr_image.rows});
+        pimpl_->preproc_->process(frame, pimpl_->input_tensor);
 
-    std::vector<float> h_output(high_res_tensor.num_elements());
-    high_res_tensor.copy_to_host(h_output.data());
+        // 2. Inference
+        pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-    cv::Mat high_res_image_chw;
-    std::vector<cv::Mat> channels;
-    for(int i = 0; i < C; ++i) {
-        channels.emplace_back(H, W, CV_32F, h_output.data() + i * H * W);
-    }
-    cv::merge(channels, high_res_image_chw);
-
-    cv::Mat high_res_image_bgr;
-    high_res_image_chw.convertTo(high_res_image_bgr, CV_8UC3, 255.0);
-
-    cv::Mat final_image;
-    if (low_res_image.size() == cv::Size(W, H)) {
-        final_image = high_res_image_bgr;
+        // 3. Postprocess
+        return pimpl_->tensor_to_image(pimpl_->output_tensor);
     } else {
-        cv::resize(high_res_image_bgr, final_image,
-                   cv::Size(low_res_image.cols * pimpl_->config_.upscale_factor, low_res_image.rows * pimpl_->config_.upscale_factor),
-                   0, 0, cv::INTER_CUBIC);
+        // Tiling Path
+        XINFER_LOG_INFO("Input image is large, using tiling...");
+        return pimpl_->process_with_tiling(lr_image);
     }
-
-    return final_image;
 }
 
 } // namespace xinfer::zoo::generative

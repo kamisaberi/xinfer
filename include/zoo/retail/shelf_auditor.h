@@ -2,40 +2,78 @@
 
 #include <string>
 #include <vector>
+#include <map>
 #include <memory>
 #include <opencv2/opencv.hpp>
 
-namespace xinfer::zoo::vision { class ObjectDetector; }
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
+#include <xinfer/postproc/vision/types.h> // For BoundingBox
 
 namespace xinfer::zoo::retail {
 
-    struct ShelfItem {
+    struct ProductItem {
+        std::string sku_name;
         int class_id;
-        std::string label;
-        int count;
-        std::vector<cv::Rect> locations;
+        float confidence;
+        postproc::BoundingBox box;
     };
 
-    struct ShelfAuditorConfig {
-        std::string detection_engine_path;
+    struct ShelfState {
+        // List of all detected items
+        std::vector<ProductItem> items;
+
+        // List of detected empty spaces (if model supports "Gap" class)
+        std::vector<postproc::BoundingBox> gaps;
+
+        // Aggregated Inventory count (SKU -> Count)
+        std::map<std::string, int> inventory_summary;
+    };
+
+    struct AuditorConfig {
+        // Hardware Target
+        xinfer::Target target = xinfer::Target::INTEL_OV;
+
+        // Model Path (e.g., yolov8_shelf.rknn)
+        std::string model_path;
+
+        // Path to SKU names file (coco.names style)
         std::string labels_path;
-        float confidence_threshold = 0.6f;
-        float nms_iou_threshold = 0.4f;
-        int detection_input_width = 1280;
-        int detection_input_height = 720;
+
+        // Input Specs
+        int input_width = 640;
+        int input_height = 640;
+
+        // Detection Settings
+        float conf_threshold = 0.4f;
+        float nms_threshold = 0.5f;
+
+        // Optional: specific class ID representing "Empty/Gap"
+        // Set to -1 if model doesn't detect gaps.
+        int gap_class_id = -1;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class ShelfAuditor {
     public:
-        explicit ShelfAuditor(const ShelfAuditorConfig& config);
+        explicit ShelfAuditor(const AuditorConfig& config);
         ~ShelfAuditor();
 
-        ShelfAuditor(const ShelfAuditor&) = delete;
-        ShelfAuditor& operator=(const ShelfAuditor&) = delete;
+        // Move semantics
         ShelfAuditor(ShelfAuditor&&) noexcept;
         ShelfAuditor& operator=(ShelfAuditor&&) noexcept;
+        ShelfAuditor(const ShelfAuditor&) = delete;
+        ShelfAuditor& operator=(const ShelfAuditor&) = delete;
 
-        std::vector<ShelfItem> audit(const cv::Mat& shelf_image);
+        /**
+         * @brief Scan a shelf image for inventory.
+         *
+         * @param image Input frame (High res recommended for small SKUs).
+         * @return ShelfState containing item locations and counts.
+         */
+        ShelfState audit(const cv::Mat& image);
 
     private:
         struct Impl;
@@ -43,4 +81,3 @@ namespace xinfer::zoo::retail {
     };
 
 } // namespace xinfer::zoo::retail
-

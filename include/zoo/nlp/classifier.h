@@ -3,36 +3,66 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <map>
 
-// #include <xinfer/preproc/tokenizer.h>
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::nlp {
 
-    struct TextClassificationResult {
-        int class_id;
-        float confidence;
-        std::string label;
+    /**
+     * @brief Result of text classification.
+     */
+    struct TextClassResult {
+        int id;             // Class Index
+        float confidence;   // Probability (0.0 - 1.0)
+        std::string label;  // Class Name (e.g., "Positive", "Spam")
     };
 
-    struct ClassifierConfig {
-        std::string engine_path;
-        std::string labels_path = "";
-        std::string vocab_path = "";
+    struct TextClassifierConfig {
+        // Hardware Target
+        xinfer::Target target = xinfer::Target::INTEL_OV;
+
+        // Model Path (e.g., distilbert_sentiment.onnx)
+        std::string model_path;
+
+        // Tokenizer settings
+        std::string vocab_path;    // vocab.txt or tokenizer.json
         int max_sequence_length = 128;
+        bool do_lower_case = true;
+
+        // Label Map (Path to text file with labels, one per line)
+        std::string labels_path;
+
+        // Post-processing
+        int top_k = 1;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
-    class Classifier {
+    class TextClassifier {
     public:
-        explicit Classifier(const ClassifierConfig& config);
-        ~Classifier();
+        explicit TextClassifier(const TextClassifierConfig& config);
+        ~TextClassifier();
 
-        Classifier(const Classifier&) = delete;
-        Classifier& operator=(const Classifier&) = delete;
-        Classifier(Classifier&&) noexcept;
-        Classifier& operator=(Classifier&&) noexcept;
+        // Move semantics
+        TextClassifier(TextClassifier&&) noexcept;
+        TextClassifier& operator=(TextClassifier&&) noexcept;
+        TextClassifier(const TextClassifier&) = delete;
+        TextClassifier& operator=(const TextClassifier&) = delete;
 
-        std::vector<TextClassificationResult> predict(const std::string& text, int top_k = 5);
+        /**
+         * @brief Classify a text string.
+         *
+         * Pipeline:
+         * 1. Tokenize (WordPiece/BPE) -> Input IDs + Mask.
+         * 2. Inference (Transformer).
+         * 3. Postprocess (Softmax + TopK).
+         *
+         * @param text Input string.
+         * @return List of top_k predicted classes.
+         */
+        std::vector<TextClassResult> classify(const std::string& text);
 
     private:
         struct Impl;
@@ -40,4 +70,3 @@ namespace xinfer::zoo::nlp {
     };
 
 } // namespace xinfer::zoo::nlp
-

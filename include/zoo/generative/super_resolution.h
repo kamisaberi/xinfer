@@ -5,16 +5,33 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 
-namespace xinfer::core { class Tensor; }
-namespace xinfer::preproc { class ImageProcessor; }
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::generative {
 
     struct SuperResolutionConfig {
-        std::string engine_path;
-        int upscale_factor = 4;
-        int input_width = 128;
-        int input_height = 128;
+        // Hardware Target (GPU is recommended for high-res upscaling)
+        xinfer::Target target = xinfer::Target::NVIDIA_TRT;
+
+        // Model Path (e.g., realesrgan_x4.engine)
+        std::string model_path;
+
+        // Model Scale
+        // e.g., 2 for 2x, 4 for 4x
+        int scale = 4;
+
+        // Input Specs (Can be variable size, but tiling is often used for large images)
+        // Some models require specific input patch sizes.
+        int input_width = 0;  // 0 = auto/dynamic
+        int input_height = 0; // 0 = auto/dynamic
+
+        // Tiling (For very large images to manage VRAM)
+        int tile_size = 512;
+        int tile_pad = 10;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class SuperResolution {
@@ -22,12 +39,19 @@ namespace xinfer::zoo::generative {
         explicit SuperResolution(const SuperResolutionConfig& config);
         ~SuperResolution();
 
-        SuperResolution(const SuperResolution&) = delete;
-        SuperResolution& operator=(const SuperResolution&) = delete;
+        // Move semantics
         SuperResolution(SuperResolution&&) noexcept;
         SuperResolution& operator=(SuperResolution&&) noexcept;
+        SuperResolution(const SuperResolution&) = delete;
+        SuperResolution& operator=(const SuperResolution&) = delete;
 
-        cv::Mat predict(const cv::Mat& low_res_image);
+        /**
+         * @brief Upscale an image.
+         *
+         * @param lr_image The low-resolution input image (BGR).
+         * @return The high-resolution output image.
+         */
+        cv::Mat upscale(const cv::Mat& lr_image);
 
     private:
         struct Impl;
@@ -35,4 +59,3 @@ namespace xinfer::zoo::generative {
     };
 
 } // namespace xinfer::zoo::generative
-

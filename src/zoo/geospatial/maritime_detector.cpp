@@ -1,112 +1,165 @@
-#include <include/zoo/geospatial/maritime_detector.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
+#include <xinfer/zoo/geospatial/maritime_detector.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
-#include <include/postproc/detection.h>
-#include <include/postproc/yolo_decoder.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+#include <xinfer/postproc/factory.h>
+#include <xinfer/postproc/vision/tracker_interface.h>
+
+#include <fstream>
+#include <iostream>
 
 namespace xinfer::zoo::geospatial {
 
-const int MAX_DECODED_MARITIME_OBJECTS = 2048;
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
 struct MaritimeDetector::Impl {
-    MaritimeDetectorConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_;
-    std::vector<std::string> class_labels_;
+    MaritimeConfig config_;
 
-    core::Tensor decoded_boxes_gpu;
-    core::Tensor decoded_scores_gpu;
-    core::Tensor decoded_classes_gpu;
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> preproc_;
+    std::unique_ptr<postproc::IDetectionPostprocessor> detector_;
+    std::unique_ptr<postproc::ITracker> tracker_;
 
-    std::vector<float> h_boxes;
-    std::vector<float> h_scores;
-    std::vector<int> h_classes;
+    // Data Containers
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
 
-    Impl(const MaritimeDetectorConfig& config) : config_(config) {
-        decoded_boxes_gpu = core::Tensor({MAX_DECODED_MARITIME_OBJECTS, 4}, core::DataType::kFLOAT);
-        decoded_scores_gpu = core::Tensor({MAX_DECODED_MARITIME_OBJECTS}, core::DataType::kFLOAT);
-        decoded_classes_gpu = core::Tensor({MAX_DECODED_MARITIME_OBJECTS}, core::DataType::kINT32);
-        h_boxes.resize(MAX_DECODED_MARITIME_OBJECTS * 4);
-        h_scores.resize(MAX_DECODED_MARITIME_OBJECTS);
-        h_classes.resize(MAX_DECODED_MARITIME_OBJECTS);
+    // Labels
+    std::vector<std::string> labels_;
+
+    Impl(const MaritimeConfig& config) : config_(config) {
+        initialize();
+    }
+
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
+
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("MaritimeDetector: Failed to load model " + config_.model_path);
+        }
+
+        // 2. Setup Preprocessor
+        preproc_ = preproc::create_image_preprocessor(config_.target);
+        preproc::ImagePreprocConfig pre_cfg;
+        pre_cfg.target_width = config_.input_width;
+        pre_cfg.target_height = config_.input_height;
+        preproc_->init(pre_cfg);
+
+        // 3. Setup Detector Post-processor
+        detector_ = postproc::create_detection(config_.target);
+        postproc::DetectionConfig det_cfg;
+        det_cfg.conf_threshold = config_.conf_threshold;
+        det_cfg.nms_threshold = config_.nms_threshold;
+        load_labels(config_.labels_path);
+        det_cfg.num_classes = labels_.size();
+        detector_->init(det_cfg);
+
+        // 4. Setup Tracker (Optional)
+        if (config_.enable_tracking) {
+            tracker_ = postproc::create_tracker(config_.target);
+            postproc::TrackerConfig trk_cfg;
+            tracker_->init(trk_cfg);
+        }
+    }
+
+    void load_labels(const std::string& path) {
+        if (path.empty()) return;
+        std::ifstream file(path);
+        std::string line;
+        while (std::getline(file, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            labels_.push_back(line);
+        }
     }
 };
 
-MaritimeDetector::MaritimeDetector(const MaritimeDetectorConfig& config) : pimpl_(new Impl(config)) {
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Maritime detector engine file not found: " + pimpl_->config_.engine_path);
-    }
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-    pimpl_->preprocessor_ = std::make_unique<preproc::ImageProcessor>(pimpl_->config_.input_width, pimpl_->config_.input_height, true);
+// =================================================================================
+// Public API
+// =================================================================================
 
-    if (!pimpl_->config_.labels_path.empty()) {
-        std::ifstream labels_file(pimpl_->config_.labels_path);
-        if (!labels_file) throw std::runtime_error("Could not open labels file: " + pimpl_->config_.labels_path);
-        std::string line;
-        while (std::getline(labels_file, line)) {
-            pimpl_->class_labels_.push_back(line);
-        }
-    }
-}
+MaritimeDetector::MaritimeDetector(const MaritimeConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 MaritimeDetector::~MaritimeDetector() = default;
 MaritimeDetector::MaritimeDetector(MaritimeDetector&&) noexcept = default;
 MaritimeDetector& MaritimeDetector::operator=(MaritimeDetector&&) noexcept = default;
 
-std::vector<DetectedObject> MaritimeDetector::predict(const cv::Mat& satellite_image) {
-    if (!pimpl_) throw std::runtime_error("MaritimeDetector is in a moved-from state.");
+void MaritimeDetector::reset_tracker() {
+    if (pimpl_ && pimpl_->tracker_) pimpl_->tracker_->reset();
+}
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(satellite_image, input_tensor);
+std::vector<Vessel> MaritimeDetector::detect(const cv::Mat& image) {
+    if (!pimpl_) throw std::runtime_error("MaritimeDetector is null.");
 
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& raw_output = output_tensors[0];
+    // 1. Preprocess
+    preproc::ImageFrame frame;
+    frame.data = image.data;
+    frame.width = image.cols;
+    frame.height = image.rows;
+    frame.format = preproc::ImageFormat::BGR;
 
-    postproc::yolo::decode(raw_output, pimpl_->config_.confidence_threshold,
-                           pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->decoded_classes_gpu);
+    pimpl_->preproc_->process(frame, pimpl_->input_tensor);
 
-    std::vector<int> nms_indices = postproc::detection::nms(
-        pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->config_.nms_iou_threshold);
+    // 2. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-    std::vector<DetectedObject> final_objects;
-    if (nms_indices.empty()) {
-        return final_objects;
+    // 3. Detect
+    auto detections = pimpl_->detector_->process({pimpl_->output_tensor});
+
+    // Scale boxes
+    float sx = (float)image.cols / pimpl_->config_.input_width;
+    float sy = (float)image.rows / pimpl_->config_.input_height;
+
+    for (auto& d : detections) {
+        d.x1 *= sx; d.x2 *= sx; d.y1 *= sy; d.y2 *= sy;
     }
 
-    pimpl_->decoded_boxes_gpu.copy_to_host(pimpl_->h_boxes.data());
-    pimpl_->decoded_scores_gpu.copy_to_host(pimpl_->h_scores.data());
-    pimpl_->decoded_classes_gpu.copy_to_host(pimpl_->h_classes.data());
+    std::vector<Vessel> results;
 
-    float scale_x = (float)satellite_image.cols / pimpl_->config_.input_width;
-    float scale_y = (float)satellite_image.rows / pimpl_->config_.input_height;
+    // 4. Track or Direct Output
+    if (pimpl_->tracker_) {
+        auto tracks = pimpl_->tracker_->update(detections);
 
-    for (int idx : nms_indices) {
-        DetectedObject obj;
-        float x1 = pimpl_->h_boxes[idx * 4 + 0] * scale_x;
-        float y1 = pimpl_->h_boxes[idx * 4 + 1] * scale_y;
-        float x2 = pimpl_->h_boxes[idx * 4 + 2] * scale_x;
-        float y2 = pimpl_->h_boxes[idx * 4 + 3] * scale_y;
+        results.reserve(tracks.size());
+        for (const auto& t : tracks) {
+            Vessel v;
+            v.track_id = t.track_id;
+            v.box = t.box;
+            v.confidence = t.box.confidence;
 
-        obj.confidence = pimpl_->h_scores[idx];
-        obj.class_id = pimpl_->h_classes[idx];
-
-        // For rotated boxes, a different decoder would be needed.
-        // This is a simplified conversion to a contour.
-        obj.contour = {{x1, y1}, {x2, y1}, {x2, y2}, {x1, y2}};
-
-        if (!pimpl_->class_labels_.empty() && obj.class_id < pimpl_->class_labels_.size()) {
-            obj.label = pimpl_->class_labels_[obj.class_id];
+            if (t.box.class_id < (int)pimpl_->labels_.size()) {
+                v.type = pimpl_->labels_[t.box.class_id];
+            }
+            results.push_back(v);
         }
+    } else {
+        // No tracking, just output detections
+        results.reserve(detections.size());
+        for (const auto& d : detections) {
+            Vessel v;
+            v.track_id = -1; // No tracking ID
+            v.box = d;
+            v.confidence = d.confidence;
 
-        final_objects.push_back(obj);
+            if (d.class_id < (int)pimpl_->labels_.size()) {
+                v.type = pimpl_->labels_[d.class_id];
+            }
+            results.push_back(v);
+        }
     }
 
-    return final_objects;
+    return results;
 }
 
 } // namespace xinfer::zoo::geospatial

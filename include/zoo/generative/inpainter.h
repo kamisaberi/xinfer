@@ -1,20 +1,38 @@
 #pragma once
 
-
 #include <string>
 #include <vector>
 #include <memory>
 #include <opencv2/opencv.hpp>
 
-namespace xinfer::core { class Tensor; }
-namespace xinfer::preproc { class ImageProcessor; }
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::generative {
 
     struct InpainterConfig {
-        std::string engine_path;
-        int input_width = 512;
-        int input_height = 512;
+        // Hardware Target (GPU with >8GB VRAM is required)
+        xinfer::Target target = xinfer::Target::NVIDIA_TRT;
+
+        // --- Model Paths ---
+        std::string text_encoder_path;
+        std::string unet_path; // MUST be an Inpainting UNet
+        std::string vae_encoder_path;
+        std::string vae_decoder_path;
+
+        // --- Tokenizer ---
+        std::string vocab_path;
+        std::string merges_path;
+
+        // --- Generation Parameters ---
+        int height = 512;
+        int width = 512;
+        int num_inference_steps = 50;
+        float guidance_scale = 7.5f;
+        int seed = -1;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class Inpainter {
@@ -22,12 +40,25 @@ namespace xinfer::zoo::generative {
         explicit Inpainter(const InpainterConfig& config);
         ~Inpainter();
 
-        Inpainter(const Inpainter&) = delete;
-        Inpainter& operator=(const Inpainter&) = delete;
+        // Move semantics
         Inpainter(Inpainter&&) noexcept;
         Inpainter& operator=(Inpainter&&) noexcept;
+        Inpainter(const Inpainter&) = delete;
+        Inpainter& operator=(const Inpainter&) = delete;
 
-        cv::Mat predict(const cv::Mat& image, const cv::Mat& mask);
+        /**
+         * @brief Inpaint a masked region of an image.
+         *
+         * @param image The original image (BGR).
+         * @param mask The mask image (Grayscale, 255=Inpaint, 0=Keep).
+         * @param prompt Text prompt describing what to fill in.
+         * @param negative_prompt Optional negative prompt.
+         * @return The completed image.
+         */
+        cv::Mat inpaint(const cv::Mat& image,
+                        const cv::Mat& mask,
+                        const std::string& prompt,
+                        const std::string& negative_prompt = "");
 
     private:
         struct Impl;
@@ -35,4 +66,3 @@ namespace xinfer::zoo::generative {
     };
 
 } // namespace xinfer::zoo::generative
-

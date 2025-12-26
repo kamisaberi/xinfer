@@ -5,27 +5,47 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 
-namespace xinfer::core { class Tensor; }
-namespace xinfer::preproc { class ImageProcessor; }
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::vision {
 
-    struct InstanceSegmentationResult {
+    /**
+     * @brief A single detected instance with its mask.
+     */
+    struct InstanceResult {
         int class_id;
         float confidence;
         std::string label;
-        cv::Rect bounding_box;
+
+        // Bounding Box (Scaled to original image)
+        cv::Rect box;
+
+        // Binary Mask (uint8).
+        // 255 = Object, 0 = Background.
+        // Note: Usually returned at network resolution (e.g. 640x640) to save memory.
+        // User should resize it to 'box' dimensions if pixel-perfect overlay is needed.
         cv::Mat mask;
     };
 
     struct InstanceSegmenterConfig {
-        std::string engine_path;
-        std::string labels_path = "";
-        float confidence_threshold = 0.5f;
-        float nms_iou_threshold = 0.5f;
-        float mask_threshold = 0.5f;
+        // Hardware Target
+        xinfer::Target target = xinfer::Target::INTEL_OV;
+
+        // Model Path (e.g., yolov8m-seg.engine)
+        std::string model_path;
+        std::string labels_path;
+
+        // Input Specs
         int input_width = 640;
         int input_height = 640;
+
+        // Thresholds
+        float conf_threshold = 0.25f;
+        float nms_threshold = 0.45f;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class InstanceSegmenter {
@@ -33,12 +53,23 @@ namespace xinfer::zoo::vision {
         explicit InstanceSegmenter(const InstanceSegmenterConfig& config);
         ~InstanceSegmenter();
 
-        InstanceSegmenter(const InstanceSegmenter&) = delete;
-        InstanceSegmenter& operator=(const InstanceSegmenter&) = delete;
+        // Move semantics
         InstanceSegmenter(InstanceSegmenter&&) noexcept;
         InstanceSegmenter& operator=(InstanceSegmenter&&) noexcept;
+        InstanceSegmenter(const InstanceSegmenter&) = delete;
+        InstanceSegmenter& operator=(const InstanceSegmenter&) = delete;
 
-        std::vector<InstanceSegmentationResult> predict(const cv::Mat& image);
+        /**
+         * @brief Segment objects in an image.
+         *
+         * Pipeline:
+         * 1. Preprocess
+         * 2. Inference (Detection Head + Mask Proto Head)
+         * 3. Postprocess (Matrix Multiply Coeffs * Proto -> Sigmoid -> Crop)
+         *
+         * @return Vector of instances.
+         */
+        std::vector<InstanceResult> segment(const cv::Mat& image);
 
     private:
         struct Impl;
@@ -46,4 +77,3 @@ namespace xinfer::zoo::vision {
     };
 
 } // namespace xinfer::zoo::vision
-

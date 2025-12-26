@@ -132,4 +132,48 @@ struct LowLightEnhancer::Impl {
     }
 };
 
-// ====================================================
+// =================================================================================
+// Public API
+// =================================================================================
+
+LowLightEnhancer::LowLightEnhancer(const LowLightConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
+
+LowLightEnhancer::~LowLightEnhancer() = default;
+LowLightEnhancer::LowLightEnhancer(LowLightEnhancer&&) noexcept = default;
+LowLightEnhancer& LowLightEnhancer::operator=(LowLightEnhancer&&) noexcept = default;
+
+EnhancementResult LowLightEnhancer::enhance(const cv::Mat& dark_image) {
+    if (!pimpl_) throw std::runtime_error("LowLightEnhancer is null.");
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    // 1. Preprocess
+    preproc::ImageFrame frame;
+    frame.data = dark_image.data;
+    frame.width = dark_image.cols;
+    frame.height = dark_image.rows;
+    frame.format = preproc::ImageFormat::BGR;
+
+    pimpl_->preproc_->process(frame, pimpl_->input_tensor);
+
+    // 2. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
+
+    auto end = std::chrono::high_resolution_clock::now();
+    float time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    // 3. Postprocess (Reconstruct Image)
+    cv::Mat enhanced = pimpl_->tensor_to_image(pimpl_->output_tensor);
+
+    // 4. Resize to Original
+    // Models typically output fixed size (e.g. 512x512).
+    // We upscale to match original input size for display.
+    if (enhanced.size() != dark_image.size()) {
+        cv::resize(enhanced, enhanced, dark_image.size(), 0, 0, cv::INTER_CUBIC);
+    }
+
+    return {enhanced, time_ms};
+}
+
+} // namespace xinfer::zoo::vision

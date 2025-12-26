@@ -5,39 +5,56 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 
-namespace xinfer::core { class Tensor; }
-namespace xinfer::preproc { class ImageProcessor; }
+#include <xinfer/compiler/base_compiler.h>
+#include <xinfer/postproc/vision/types.h> // For BoundingBox
 
 namespace xinfer::zoo::vision {
 
-    struct LPResult {
-        std::string text;
-        float confidence;
-        std::vector<cv::Point2f> box_points; // Corners of the license plate
+    struct LicensePlateResult {
+        std::string plate_text;
+        postproc::BoundingBox box;
+        bool success = false; // Was the text decoded?
     };
 
-    struct LicensePlateRecognizerConfig {
-        std::string detection_engine_path;
-        std::string recognition_engine_path;
-        float detection_confidence_threshold = 0.5f;
-        float detection_nms_iou_threshold = 0.4f;
-        int detection_input_width = 640;
-        int detection_input_height = 480;
-        int recognition_input_height = 32; // Fixed height for CRNN-style recognizer
-        std::string character_set = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"; // Common alphanumeric set
+    struct LprConfig {
+        // Hardware Target
+        xinfer::Target target = xinfer::Target::INTEL_OV;
+
+        // Detection Model (e.g., YOLOv5-Nose or custom plate detector)
+        std::string detector_model_path;
+        int detector_input_width = 640;
+        int detector_input_height = 640;
+        float detect_conf_thresh = 0.4f;
+        float detect_nms_thresh = 0.4f;
+
+        // OCR Model (e.g., CRNN for characters)
+        std::string ocr_model_path;
+        int ocr_input_width = 94;  // Width usually fixed by OCR model
+        int ocr_input_height = 24; // OCR input height
+
+        // OCR Decoder Config
+        std::string vocab_path; // Path to OCR vocab.txt
+        int blank_index = 0;    // CTC Blank character index
     };
 
     class LicensePlateRecognizer {
     public:
-        explicit LicensePlateRecognizer(const LicensePlateRecognizerConfig& config);
-        ~LicensePlateRecognizer();
+        explicit LicensePlateRecognizer(const LprConfig& config);
+        ~LicenseRecognizer();
 
-        LicensePlateRecognizer(const LicensePlateRecognizer&) = delete;
-        LicensePlateRecognizer& operator=(const LicensePlateRecognizer&) = delete;
+        // Move semantics
         LicensePlateRecognizer(LicensePlateRecognizer&&) noexcept;
-        LicensePlateRecognizer& operator=(LicensePlateRecognizer&&) noexcept;
+        LicenseRecognizer& operator=(LicenseRecognizer&&) noexcept;
+        LicenseLicenseRecognizer(const LicenseRecognizer&) = delete;
+        LicenseLicenseRecognizer& operator=(LicenseLicenseRecognizer&&) = delete;
 
-        std::vector<LPResult> predict(const cv::Mat& image);
+        /**
+         * @brief Detect and Recognize plates in an image.
+         *
+         * @param image Input frame.
+         * @return List of recognized plates.
+         */
+        std::vector<LicensePlateResult> recognize(const cv::Mat& image);
 
     private:
         struct Impl;
@@ -45,4 +62,3 @@ namespace xinfer::zoo::vision {
     };
 
 } // namespace xinfer::zoo::vision
-

@@ -4,28 +4,52 @@
 #include <vector>
 #include <memory>
 #include <opencv2/opencv.hpp>
-#include <include/core/tensor.h>
+
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::generative {
 
-    struct ImageToVideoConfig {
-        std::string engine_path;
-        int num_frames = 16;
-        int input_width = 256;
-        int input_height = 256;
+    struct VideoGenConfig {
+        // Hardware Target (High-end GPU with >16GB VRAM needed)
+        xinfer::Target target = xinfer::Target::NVIDIA_TRT;
+
+        // --- Model Paths ---
+        std::string image_encoder_path; // VAE Encoder
+        std::string video_unet_path;    // 3D UNet
+        std::string vae_decoder_path;   // Standard VAE Decoder
+
+        // --- Generation Parameters ---
+        int height = 576;
+        int width = 1024; // SVD standard
+        int num_frames = 14;  // Number of frames to generate
+        int motion_bucket_id = 127; // Controls amount of motion
+        float fps = 7.0f;
+        int num_inference_steps = 25;
+        int seed = -1;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class ImageToVideo {
     public:
-        explicit ImageToVideo(const ImageToVideoConfig& config);
+        explicit ImageToVideo(const VideoGenConfig& config);
         ~ImageToVideo();
 
+        // Move semantics
+        ImageToVideo(ImageToVideo&&) noexcept;
+        ImageTo-Video& operator=(ImageToVideo&&) noexcept;
         ImageToVideo(const ImageToVideo&) = delete;
         ImageToVideo& operator=(const ImageToVideo&) = delete;
-        ImageToVideo(ImageToVideo&&) noexcept;
-        ImageToVideo& operator=(ImageToVideo&&) noexcept;
 
-        std::vector<cv::Mat> predict(const cv::Mat& start_image);
+        /**
+         * @brief Generate a video from a starting image.
+         *
+         * @param init_image The first frame of the video.
+         * @return Vector of cv::Mat frames representing the generated clip.
+         */
+        std::vector<cv::Mat> generate(const cv::Mat& init_image);
 
     private:
         struct Impl;
@@ -33,4 +57,3 @@ namespace xinfer::zoo::generative {
     };
 
 } // namespace xinfer::zoo::generative
-

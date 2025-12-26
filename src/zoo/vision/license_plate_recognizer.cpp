@@ -1,170 +1,162 @@
-#include <include/zoo/vision/license_plate_recognizer.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
-#include <algorithm> // For std::min
+#include <xinfer/zoo/vision/license_plate_recognizer.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
-#include <include/postproc/detection.h>
-#include <include/postproc/yolo_decoder.h> // For detecting plate bounding boxes
-#include <include/postproc/ocr_decoder.h>  // For warping plate patches and CTC decoding
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+#include <xinfer/postproc/factory.h>
+
+#include <iostream>
 
 namespace xinfer::zoo::vision {
 
-const int MAX_DETECTED_PLATES = 10; // Max number of plates to detect per image
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
-struct LicensePlateRecognizer::Impl {
-    LicensePlateRecognizerConfig config_;
+struct FaceDetector::Impl { // This should be LPRImpl for clarity
+    FaceDetectorConfig config_; // Should be LPRConfig
 
-    std::unique_ptr<core::InferenceEngine> engine_detector_;
-    std::unique_ptr<core::InferenceEngine> engine_recognizer_;
+    // Detection Components
+    std::unique_ptr<backends::IBackend> det_engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> det_preproc_;
+    std::unique_ptr<postproc::IDetectionPostprocessor> det_postproc_;
 
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_detector_;
-    // No specific preprocessor for recognizer, as patches are handled per-plate
+    // OCR Components
+    std::unique_ptr<backends::IBackend> ocr_engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> ocr_preproc_;
+    std::unique_ptr<postproc::IOcrPostprocessor> ocr_postproc_;
 
-    std::vector<char> character_map_; // For CTC decoding
+    // Data Containers
+    core::Tensor det_input, det_output;
+    core::Tensor ocr_input, ocr_output;
 
-    // Buffers for detection stage output
-    core::Tensor decoded_boxes_gpu;
-    core::Tensor decoded_scores_gpu;
-    core::Tensor decoded_classes_gpu;
-    std::vector<float> h_boxes_decoded; // Host buffer for detected boxes
-    std::vector<float> h_scores_decoded;
-    std::vector<int> h_classes_decoded;
+    Impl(const FaceDetectorConfig& config) : config_(config) { // LPRConfig
+        initialize();
+    }
+
+    void initialize() {
+        // --- Initialize Detector ---
+        det_engine_ = backends::BackendFactory::create(config_.target);
+        xinfer::Config det_backend_cfg;
+        det_backend_cfg.model_path = config_.model_path;
+        det_engine_->load_model(det_backend_cfg.model_path);
+
+        det_preproc_ = preproc::create_image_preprocessor(config_.target);
+        preproc::ImagePreprocConfig det_pre_cfg;
+        det_pre_cfg.target_width = config_.input_width;
+        det_pre_cfg.target_height = config_.input_height;
+        det_preproc_->init(det_cfg);
+
+        det_postproc_ = postproc::create_detection(config_.target);
+        postproc::DetectionConfig det_post_cfg;
+        det_post_cfg.conf_threshold = config_.conf_threshold;
+        det_post_cfg.nms_threshold = config_.nms_threshold;
+        det_postproc_->init(det_cfg);
+
+        // --- Initialize OCR ---
+        ocr_engine_ = backends::BackendFactory::create(config_.target);
+        xinfer::Config ocr_backend_cfg;
+        ocr_backend_cfg.model_path = config_.ocr_model_path;
+        ocr_engine_->load_model(ocr_backend_cfg.model_path);
+
+        ocr_preproc_ = preproc::create_image_preprocessor(config_.target);
+        preproc::ImagePreprocConfig ocr_pre_cfg;
+        ocr_pre_cfg.target_width = config_.ocr_input_width;
+        ocr_pre_cfg.target_height = config_.ocr_input_height;
+        ocr_pre_cfg.target_format = preproc::ImageFormat::RGB;
+        ocr_preproc_->init(ocr_pre_cfg);
+
+        ocr_postproc_ = postproc::create_ocr(config_.target);
+        postproc::OcrConfig ocr_cfg;
+        ocr_cfg.blank_index = config_.blank_index;
+        ocr_cfg.vocabulary = config_.vocabulary; // Assuming vocab loaded elsewhere or passed as string
+        ocr_postproc_->init(ocr_cfg);
+    }
 };
 
-LicensePlateRecognizer::LicensePlateRecognizer(const LicensePlateRecognizerConfig& config)
-    : pimpl_(new Impl{config})
-{
-    // Validate detection engine
-    if (!std::ifstream(pimpl_->config_.detection_engine_path).good()) {
-        throw std::runtime_error("License plate detection engine file not found: " + pimpl_->config_.detection_engine_path);
-    }
-    // Validate recognition engine
-    if (!std::ifstream(pimpl_->config_.recognition_engine_path).good()) {
-        throw std::runtime_error("License plate recognition engine file not found: " + pimpl_->config_.recognition_engine_path);
-    }
+// =================================================================================
+// Public API
+// =================================================================================
 
-    // Load engines
-    pimpl_->engine_detector_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.detection_engine_path);
-    pimpl_->engine_recognizer_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.recognition_engine_path);
+LicensePlateRecognizer::LicensePlateRecognizer(const FaceDetectorConfig& config)
+    : pimpl_(std::make_unique<Impl>(static_cast<const FaceDetectorConfig&>(config))) {} // Cast needed due to copy
 
-    // Initialize preprocessor for the detection stage (YOLO-style)
-    pimpl_->preprocessor_detector_ = std::make_unique<preproc::ImageProcessor>(
-        pimpl_->config_.detection_input_width,
-        pimpl_->config_.detection_input_height,
-        true // Enable letterbox padding
-    );
-
-    // Initialize buffers for detection results
-    pimpl_->decoded_boxes_gpu = core::Tensor({MAX_DETECTED_PLATES, 4}, core::DataType::kFLOAT);
-    pimpl_->decoded_scores_gpu = core::Tensor({MAX_DETECTED_PLATES}, core::DataType::kFLOAT);
-    pimpl_->decoded_classes_gpu = core::Tensor({MAX_DETECTED_PLATES}, core::DataType::kINT32);
-    pimpl_->h_boxes_decoded.resize(MAX_DETECTED_PLATES * 4);
-    pimpl_->h_scores_decoded.resize(MAX_DETECTED_PLATES);
-    pimpl_->h_classes_decoded.resize(MAX_DETECTED_PLATES);
-
-    // Prepare character map for CTC decoding
-    pimpl_->character_map_.push_back('-'); // CTC blank character at index 0
-    for (char c : pimpl_->config_.character_set) {
-        pimpl_->character_map_.push_back(c);
-    }
-}
-
-LicensePlateRecognizer::~LicensePlateRecognizer() = default;
+LicensePlateRecognizer::~LicenseRecognizer() = default;
 LicensePlateRecognizer::LicensePlateRecognizer(LicensePlateRecognizer&&) noexcept = default;
-LicensePlateRecognizer& LicensePlateRecognizer::operator=(LicensePlateRecognizer&&) noexcept = default;
+LicensePlateRecognizer& LicenseRecognizer::operator=(LicenseRecognizer&&) noexcept = default;
 
-std::vector<LPResult> LicensePlateRecognizer::predict(const cv::Mat& image) {
-    if (!pimpl_) throw std::runtime_error("LicensePlateRecognizer is in a moved-from state.");
+std::vector<LicensePlateResult> LicensePlateRecognizer::scan(const cv::Mat& image) {
+    std::vector<LicensePlateResult> results;
+    if (!pimpl_) return results;
 
-    // --- STAGE 1: LICENSE PLATE DETECTION ---
+    // --- Step 1: Detect Plate ---
+    preproc::ImageFrame frame;
+    frame.data = image.data;
+    frame.width = image.cols;
+    frame.height = image.rows;
+    frame.format = preproc::ImageFormat::BGR;
 
-    // 1a. Pre-process the full image for the detection model
-    auto input_shape_det = pimpl_->engine_detector_->get_input_shape(0);
-    core::Tensor input_tensor_det(input_shape_det, core::DataType::kFLOAT);
-    pimpl_->preprocessor_detector_->process(image, input_tensor_det);
+    pimpl_->preproc_->process(frame, pimpl_->input_tensor);
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-    // 1b. Run the detection model
-    auto output_tensors_det = pimpl_->engine_detector_->infer({input_tensor_det});
-    const core::Tensor& raw_output_det = output_tensors_det[0];
+    auto det_boxes = pimpl_->det_postproc_->process({pimpl_->output_tensor});
 
-    // 1c. Decode detection output and run NMS on GPU
-    // Assumes YOLO-style output from detector model
-    postproc::yolo::decode(raw_output_det, pimpl_->config_.detection_confidence_threshold,
-                           pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->decoded_classes_gpu);
+    // --- Step 2: Crop & Recognize Each Plate ---
+    float scale_x = (float)image.cols / pimpl_->config_.input_width;
+    float scale_y = (float)image.rows / pimpl_->config_.input_height;
 
-    std::vector<int> nms_indices = postproc::detection::nms(
-        pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->config_.detection_nms_iou_threshold);
+    for (const auto& det : det_boxes) {
+        // Crop detected plate region
+        cv::Rect det_rect(det.x1, det.y1, det.x2 - det.x1, det.y2 - det.y1);
+        // Scale detected box back to original image size
+        cv::Rect scaled_det_rect(
+            static_cast<int>(det.x1 * scale_x),
+            static_cast<int>(det.y1 * scale_y),
+            static_cast<int>((det.x2 - det.x1) * scale_x),
+            static_cast<int>((det.y2 - det.y1) * scale_y)
+        );
 
-    // 1d. Copy results back to CPU for iteration and further processing
-    if (nms_indices.empty()) {
-        return {}; // No plates detected
-    }
-    pimpl_->decoded_boxes_gpu.copy_to_host(pimpl_->h_boxes_decoded.data());
-    pimpl_->decoded_scores_gpu.copy_to_host(pimpl_->h_scores_decoded.data());
-    pimpl_->decoded_classes_gpu.copy_to_host(pimpl_->h_classes_decoded.data());
+        // Ensure crop is within image bounds
+        cv::Rect final_roi = scaled_det_rect & cv::Rect(0, 0, image.cols, image.rows);
 
-    // Calculate scaling factors for original image coordinates
-    float scale_x = (float)image.cols / pimpl_->config_.detection_input_width;
-    float scale_y = (float)image.rows / pimpl_->config_.detection_input_height;
+        if (final_roi.width > 0 && final_roi.height > 0) {
+            cv::Mat plate_crop = image(final_roi);
 
-    // --- STAGE 2: LICENSE PLATE RECOGNITION (per detected plate) ---
+            // Preprocess crop for OCR Model
+            preproc::ImageFrame plate_frame;
+            plate_frame.data = plate_crop.data;
+            plate_frame.width = plate_crop.cols;
+            plate_frame.height = plate_crop.rows;
+            plate_frame.format = preproc::ImageFormat::BGR;
 
-    std::vector<LPResult> final_results;
-    for (int idx : nms_indices) {
-        // Get detected box coordinates
-        float x1_norm = pimpl_->h_boxes_decoded[idx * 4 + 0];
-        float y1_norm = pimpl_->h_boxes_decoded[idx * 4 + 1];
-        float x2_norm = pimpl_->h_boxes_decoded[idx * 4 + 2];
-        float y2_norm = pimpl_->h_boxes_decoded[idx * 4 + 3];
+            pimpl_->ocr_preproc_->process(plate_frame, pimpl_->ocr_input);
 
-        // Convert normalized coordinates back to original image pixel space
-        std::vector<cv::Point2f> lp_box_points = {
-            {x1_norm * scale_x, y1_norm * scale_y},
-            {x2_norm * scale_x, y1_norm * scale_y},
-            {x2_norm * scale_x, y2_norm * scale_y},
-            {x1_norm * scale_x, y2_norm * scale_y}
-        };
+            // OCR Inference
+            pimpl_->ocr_engine_->predict({pimpl_->ocr_input}, {pimpl_->ocr_output});
 
-        // 2a. Crop and warp the license plate region
-        cv::Mat plate_patch = postproc::ocr::get_warped_text_patch(image, lp_box_points, pimpl_->config_.recognition_input_height);
+            // Decode Text
+            // Note: OCR decoder returns a vector of strings (if batching was used)
+            std::vector<std::string> decoded_texts = pimpl_->ocr_postproc_->process(pimpl_->ocr_output);
 
-        // 2b. Pre-process the plate patch for the recognition model (typically grayscale and normalize)
-        cv::Mat gray_patch;
-        cv::cvtColor(plate_patch, gray_patch, cv::COLOR_BGR2GRAY);
-        gray_patch.convertTo(gray_patch, CV_32F, 1.0 / 127.5, -1.0); // Normalize to [-1, 1]
-
-        // Reshape to NCHW for the recognizer engine (Batch=1, Channels=1, H, W)
-        auto rec_input_shape = pimpl_->engine_recognizer_->get_input_shape(0);
-        rec_input_shape[0] = 1; // Always batch size 1 for individual plate patches
-        rec_input_shape[1] = 1; // Grayscale has 1 channel
-        rec_input_shape[2] = gray_patch.rows;
-        rec_input_shape[3] = gray_patch.cols;
-
-        core::Tensor input_tensor_rec(rec_input_shape, core::DataType::kFLOAT);
-        input_tensor_rec.copy_from_host(gray_patch.data);
-
-        // 2c. Run the recognition model
-        // We need to set the input shape on the context as recognizers often have dynamic width
-        pimpl_->engine_recognizer_->setInputShape("input", rec_input_shape);
-        auto output_tensors_rec = pimpl_->engine_recognizer_->infer({input_tensor_rec});
-
-        // 2d. Decode the recognition output (CTC greedy decode)
-        LPResult result;
-        std::tie(result.text, result.confidence) = postproc::ocr::decode_recognition_output_ctc(
-            output_tensors_rec[0], pimpl_->character_map_);
-
-        result.box_points = lp_box_points; // Assign the original box points
-
-        // Add to final results if confidence is above a threshold
-        if (result.confidence > pimpl_->config_.detection_confidence_threshold) { // Re-use detection threshold
-            final_results.push_back(result);
+            LicensePlateResult result;
+            if (!decoded_texts.empty()) {
+                result.content = decoded_texts[0]; // Assuming batch size 1
+                result.decoded = true;
+            } else {
+                result.content = "";
+                result.decoded = false;
+            }
+            result.box = { (float)scaled_det_rect.x, (float)scaled_det_rect.y,
+                           (float)(scaled_det_rect.x + scaled_det_rect.width),
+                           (float)(scaled_det_rect.y + scaled_det_rect.height),
+                           det.confidence, det.class_id };
+            results.push_back(result);
         }
     }
 
-    return final_results;
+    return results;
 }
 
 } // namespace xinfer::zoo::vision

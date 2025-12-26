@@ -1,76 +1,125 @@
-#include <include/zoo/vision/face_recognizer.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
+#include <xinfer/zoo/vision/face_recognizer.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
+
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+// Postproc factory not needed; embedding normalization logic is simple CPU math here.
+
+#include <iostream>
 #include <cmath>
 #include <numeric>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
-
 namespace xinfer::zoo::vision {
+
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
 struct FaceRecognizer::Impl {
     FaceRecognizerConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_;
-};
 
-FaceRecognizer::FaceRecognizer(const FaceRecognizerConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Face recognition engine file not found: " + pimpl_->config_.engine_path);
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> preproc_;
+
+    // Data Containers
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
+
+    Impl(const FaceRecognizerConfig& config) : config_(config) {
+        initialize();
     }
 
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
 
-    pimpl_->preprocessor_ = std::make_unique<preproc::ImageProcessor>(
-        pimpl_->config_.input_width,
-        pimpl_->config_.input_height,
-        std::vector<float>{0.5f, 0.5f, 0.5f},
-        std::vector<float>{0.5f, 0.5f, 0.5f}
-    );
-}
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("FaceRecognizer: Failed to load model " + config_.model_path);
+        }
+
+        // 2. Setup Preprocessor
+        preproc_ = preproc::create_image_preprocessor(config_.target);
+
+        preproc::ImagePreprocConfig pre_cfg;
+        pre_cfg.target_width = config_.input_width;
+        pre_cfg.target_height = config_.input_height;
+        pre_cfg.target_format = preproc::ImageFormat::RGB;
+        pre_cfg.layout_nchw = true;
+
+        pre_cfg.norm_params.mean = config_.mean;
+        pre_cfg.norm_params.std = config_.std;
+        pre_cfg.norm_params.scale_factor = 1.0f; // Input 0-255
+
+        preproc_->init(pre_cfg);
+    }
+
+    // Helper: L2 Normalize vector in-place
+    void l2_normalize(std::vector<float>& vec) {
+        float sum_sq = 0.0f;
+        for (float val : vec) sum_sq += val * val;
+
+        float inv_norm = 1.0f / (std::sqrt(sum_sq) + 1e-10f);
+        for (float& val : vec) val *= inv_norm;
+    }
+};
+
+// =================================================================================
+// Public API
+// =================================================================================
+
+FaceRecognizer::FaceRecognizer(const FaceRecognizerConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 FaceRecognizer::~FaceRecognizer() = default;
 FaceRecognizer::FaceRecognizer(FaceRecognizer&&) noexcept = default;
 FaceRecognizer& FaceRecognizer::operator=(FaceRecognizer&&) noexcept = default;
 
-FaceEmbedding FaceRecognizer::predict(const cv::Mat& aligned_face_image) {
-    if (!pimpl_) throw std::runtime_error("FaceRecognizer is in a moved-from state.");
+std::vector<float> FaceRecognizer::get_embedding(const cv::Mat& face_image) {
+    if (!pimpl_) throw std::runtime_error("FaceRecognizer is null.");
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(aligned_face_image, input_tensor);
+    // 1. Preprocess
+    preproc::ImageFrame frame;
+    frame.data = face_image.data;
+    frame.width = face_image.cols;
+    frame.height = face_image.rows;
+    frame.format = preproc::ImageFormat::BGR;
 
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& embedding_tensor = output_tensors[0];
+    pimpl_->preproc_->process(frame, pimpl_->input_tensor);
 
-    FaceEmbedding embedding(embedding_tensor.num_elements());
-    embedding_tensor.copy_to_host(embedding.data());
+    // 2. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-    float norm = 0.0f;
-    for (float val : embedding) {
-        norm += val * val;
-    }
-    norm = std::sqrt(norm);
+    // 3. Extract & Normalize
+    // Output tensor shape is typically [1, 512]
+    size_t count = pimpl_->output_tensor.size();
+    const float* raw_ptr = static_cast<const float*>(pimpl_->output_tensor.data());
 
-    if (norm > 0) {
-        for (float& val : embedding) {
-            val /= norm;
-        }
-    }
+    std::vector<float> embedding(raw_ptr, raw_ptr + count);
+
+    // Most frameworks export ArcFace without the final L2Norm layer to save compute,
+    // so we do it on CPU.
+    pimpl_->l2_normalize(embedding);
 
     return embedding;
 }
 
-float FaceRecognizer::compare(const FaceEmbedding& emb1, const FaceEmbedding& emb2) {
-    if (emb1.size() != emb2.size() || emb1.empty()) {
-        return 0.0f;
+float FaceRecognizer::compute_similarity(const std::vector<float>& emb1,
+                                         const std::vector<float>& emb2) {
+    if (emb1.size() != emb2.size() || emb1.empty()) return 0.0f;
+
+    // Dot Product (Cosine Similarity if vectors are L2 normalized)
+    float dot = 0.0f;
+    for (size_t i = 0; i < emb1.size(); ++i) {
+        dot += emb1[i] * emb2[i];
     }
-    float dot_product = std::inner_product(emb1.begin(), emb1.end(), emb2.begin(), 0.0f);
-    return std::max(0.0f, std::min(1.0f, dot_product));
+    return dot;
 }
 
 } // namespace xinfer::zoo::vision

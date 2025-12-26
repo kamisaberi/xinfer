@@ -1,72 +1,135 @@
-#include <include/zoo/vision/low_light_enhancer.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
+#include <xinfer/zoo/vision/low_light_enhancer.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+// Postproc factory not used; custom image reconstruction logic implemented below.
+
+#include <iostream>
+#include <algorithm>
+#include <chrono>
+#include <cmath>
 
 namespace xinfer::zoo::vision {
 
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
+
 struct LowLightEnhancer::Impl {
-    LowLightEnhancerConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_;
+    LowLightConfig config_;
+
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> preproc_;
+
+    // Data Containers
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
+
+    Impl(const LowLightConfig& config) : config_(config) {
+        initialize();
+    }
+
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
+
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("LowLightEnhancer: Failed to load model " + config_.model_path);
+        }
+
+        // 2. Setup Preprocessor
+        preproc_ = preproc::create_image_preprocessor(config_.target);
+
+        preproc::ImagePreprocConfig pre_cfg;
+        pre_cfg.target_width = config_.input_width;
+        pre_cfg.target_height = config_.input_height;
+        pre_cfg.target_format = preproc::ImageFormat::RGB; // AI models usually train on RGB
+        pre_cfg.layout_nchw = true;
+
+        pre_cfg.norm_params.mean = config_.mean;
+        pre_cfg.norm_params.std = config_.std;
+        pre_cfg.norm_params.scale_factor = config_.scale_factor;
+
+        preproc_->init(pre_cfg);
+    }
+
+    // --- Custom Post-Processing: Tensor -> Image ---
+    // Handles denormalization, clamping, and channel swapping (RGB->BGR)
+    cv::Mat tensor_to_image(const core::Tensor& tensor) {
+        auto shape = tensor.shape();
+        // Expect [1, 3, H, W] (NCHW) or [1, H, W, 3] (NHWC)
+        // Most PyTorch based enhancers are NCHW.
+
+        int c = 0, h = 0, w = 0;
+        bool is_nchw = true;
+
+        if (shape.size() == 4) {
+            if (shape[1] == 3) { // NCHW
+                c = 3; h = (int)shape[2]; w = (int)shape[3];
+                is_nchw = true;
+            } else if (shape[3] == 3) { // NHWC
+                h = (int)shape[1]; w = (int)shape[2]; c = 3;
+                is_nchw = false;
+            }
+        }
+
+        if (c != 3) {
+            XINFER_LOG_ERROR("LowLight output shape invalid. Expected 3 channels.");
+            return cv::Mat();
+        }
+
+        const float* data = static_cast<const float*>(tensor.data());
+        cv::Mat result(h, w, CV_8UC3);
+        uint8_t* ptr = result.data;
+        int spatial_size = h * w;
+
+        // Gamma LUT (Look Up Table) calculation if needed
+        // Only apply if gamma != 1.0
+        bool apply_gamma = (std::abs(config_.post_gamma - 1.0f) > 0.01f);
+
+        for (int i = 0; i < spatial_size; ++i) {
+            float r, g, b;
+
+            if (is_nchw) {
+                // Planar Read
+                r = data[0 * spatial_size + i];
+                g = data[1 * spatial_size + i];
+                b = data[2 * spatial_size + i];
+            } else {
+                // Packed Read
+                r = data[i * 3 + 0];
+                g = data[i * 3 + 1];
+                b = data[i * 3 + 2];
+            }
+
+            // Clamp 0.0-1.0
+            r = std::max(0.0f, std::min(1.0f, r));
+            g = std::max(0.0f, std::min(1.0f, g));
+            b = std::max(0.0f, std::min(1.0f, b));
+
+            // Optional Gamma Correction: Output = Input^(1/gamma)
+            if (apply_gamma) {
+                r = std::pow(r, 1.0f / config_.post_gamma);
+                g = std::pow(g, 1.0f / config_.post_gamma);
+                b = std::pow(b, 1.0f / config_.post_gamma);
+            }
+
+            // Scale to 0-255 and write BGR
+            ptr[i * 3 + 0] = static_cast<uint8_t>(b * 255.0f);
+            ptr[i * 3 + 1] = static_cast<uint8_t>(g * 255.0f);
+            ptr[i * 3 + 2] = static_cast<uint8_t>(r * 255.0f);
+        }
+
+        return result;
+    }
 };
 
-LowLightEnhancer::LowLightEnhancer(const LowLightEnhancerConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Low light enhancement engine file not found: " + pimpl_->config_.engine_path);
-    }
-
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-
-    pimpl_->preprocessor_ = std::make_unique<preproc::ImageProcessor>(
-        pimpl_->config_.input_width,
-        pimpl_->config_.input_height,
-        // Typically these models work on [0,1] scaled images, no mean/std normalization
-        std::vector<float>{0.0f, 0.0f, 0.0f},
-        std::vector<float>{1.0f, 1.0f, 1.0f}
-    );
-}
-
-LowLightEnhancer::~LowLightEnhancer() = default;
-LowLightEnhancer::LowLightEnhancer(LowLightEnhancer&&) noexcept = default;
-LowLightEnhancer& LowLightEnhancer::operator=(LowLightEnhancer&&) noexcept = default;
-
-cv::Mat LowLightEnhancer::predict(const cv::Mat& low_light_image) {
-    if (!pimpl_) throw std::runtime_error("LowLightEnhancer is in a moved-from state.");
-
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(low_light_image, input_tensor);
-
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& enhanced_image_tensor = output_tensors[0];
-
-    auto output_shape = enhanced_image_tensor.shape();
-    const int C = output_shape[1];
-    const int H = output_shape[2];
-    const int W = output_shape[3];
-
-    std::vector<float> h_output(enhanced_image_tensor.num_elements());
-    enhanced_image_tensor.copy_to_host(h_output.data());
-
-    cv::Mat enhanced_image_chw(H, W, CV_32FC3);
-    std::vector<cv::Mat> channels;
-    for(int i = 0; i < C; ++i) {
-        channels.emplace_back(H, W, CV_32F, h_output.data() + i * H * W);
-    }
-    cv::merge(channels, enhanced_image_chw);
-
-    cv::Mat enhanced_image_bgr, final_image;
-    enhanced_image_chw.convertTo(enhanced_image_bgr, CV_8UC3, 255.0);
-
-    cv::resize(enhanced_image_bgr, final_image, low_light_image.size(), 0, 0, cv::INTER_CUBIC);
-
-    return final_image;
-}
-
-} // namespace xinfer::zoo::vision
+// ====================================================

@@ -1,76 +1,174 @@
-#include <include/zoo/nlp/summarizer.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
+#include <xinfer/zoo/nlp/summarizer.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-// #include <xinfer/preproc/tokenizer.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+#include <xinfer/postproc/factory.h>
+#include <xinfer/postproc/text/llm_sampler_interface.h>
+
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <cstring>
 
 namespace xinfer::zoo::nlp {
 
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
+
 struct Summarizer::Impl {
     SummarizerConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    // std::unique_ptr<preproc::Tokenizer> tokenizer_;
-};
 
-Summarizer::Summarizer(const SummarizerConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Summarizer engine file not found: " + pimpl_->config_.engine_path);
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> encoder_engine_;
+    std::unique_ptr<backends::IBackend> decoder_engine_;
+    std::unique_ptr<preproc::ITextPreprocessor> tokenizer_;
+    std::unique_ptr<postproc::ILlmSampler> sampler_;
+
+    // Data Containers
+    // Encoder IO
+    core::Tensor enc_input_ids;
+    core::Tensor enc_attention_mask;
+    core::Tensor enc_hidden_states; // Output of encoder, Input to decoder
+
+    // Decoder IO
+    core::Tensor dec_input_ids;     // [1, CurrentSeqLen]
+    core::Tensor dec_logits;        // [1, VocabSize] (for last token)
+
+    // State
+    std::vector<int> history_ids_;
+    int pad_token_id_ = 0;
+    int eos_token_id_ = 1;
+    int decoder_start_token_id_ = 0;
+
+    Impl(const SummarizerConfig& config) : config_(config) {
+        initialize();
     }
 
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-    // pimpl_->tokenizer_ = std::make_unique<preproc::Tokenizer>(pimpl_->config_.vocab_path);
-}
+    void initialize() {
+        // 1. Load Engines
+        encoder_engine_ = backends::BackendFactory::create(config_.target);
+        decoder_engine_ = backends::BackendFactory::create(config_.target);
+
+        // Load Encoder
+        xinfer::Config enc_cfg; enc_cfg.model_path = config_.encoder_model_path;
+        if (!encoder_engine_->load_model(enc_cfg.model_path)) {
+            throw std::runtime_error("Summarizer: Failed to load encoder " + config_.encoder_model_path);
+        }
+
+        // Load Decoder
+        xinfer::Config dec_cfg; dec_cfg.model_path = config_.decoder_model_path;
+        if (!decoder_engine_->load_model(dec_cfg.model_path)) {
+            throw std::runtime_error("Summarizer: Failed to load decoder " + config_.decoder_model_path);
+        }
+
+        // 2. Setup Tokenizer
+        // T5 uses SentencePiece (BPE-like), BART uses GPT2-BPE
+        auto type = config_.is_t5 ? preproc::text::TokenizerType::SENTENCEPIECE
+                                  : preproc::text::TokenizerType::GPT_BPE;
+
+        tokenizer_ = preproc::create_text_preprocessor(type, config_.target);
+        preproc::text::TokenizerConfig tok_cfg;
+        tok_cfg.vocab_path = config_.tokenizer_path;
+        tok_cfg.max_length = config_.max_source_length;
+        tokenizer_->init(tok_cfg);
+
+        // Configure Special Tokens (T5 defaults)
+        if (config_.is_t5) {
+            pad_token_id_ = 0;
+            eos_token_id_ = 1;
+            decoder_start_token_id_ = 0; // T5 starts decoder with Pad
+        } else {
+            // BART defaults
+            pad_token_id_ = 1;
+            eos_token_id_ = 2;
+            decoder_start_token_id_ = 2; // BART starts with EOS/BOS
+        }
+
+        // 3. Setup Sampler
+        sampler_ = postproc::create_llm_sampler(config_.target);
+        postproc::LlmSampleConfig samp_cfg;
+        samp_cfg.temperature = config_.temperature;
+        samp_cfg.top_k = 1; // Greedy by default for summarization accuracy
+        samp_cfg.vocab_size = 32128; // T5 vocab size
+        sampler_->init(samp_cfg);
+    }
+
+    std::string generate_summary(const std::string& text) {
+        // --- Step 1: Encode Source ---
+        // Tokenize
+        tokenizer_->process(text, enc_input_ids, enc_attention_mask);
+
+        // Run Encoder
+        // Input: [Batch, SeqLen] -> Output: [Batch, SeqLen, Hidden]
+        // This output is static for the entire generation loop.
+        encoder_engine_->predict({enc_input_ids, enc_attention_mask}, {enc_hidden_states});
+
+        // --- Step 2: Decode Loop ---
+        history_ids_.clear();
+        history_ids_.push_back(decoder_start_token_id_);
+
+        for (int i = 0; i < config_.max_target_length; ++i) {
+            // Update Decoder Input Tensor
+            // Note: For optimal perf, use KV-Caching backend support.
+            // Here we show the generic "Feed All History" approach.
+            size_t curr_len = history_ids_.size();
+            dec_input_ids.resize({1, (int64_t)curr_len}, core::DataType::kINT32);
+            std::memcpy(dec_input_ids.data(), history_ids_.data(), curr_len * sizeof(int));
+
+            // Run Decoder
+            // Inputs: [DecoderIds, EncoderHiddenStates]
+            // Note: Attention mask for encoder is often implicit or passed if backend requires it.
+            decoder_engine_->predict({dec_input_ids, enc_hidden_states}, {dec_logits});
+
+            // Sample Next Token
+            // Sampler takes [1, VocabSize] logits for the last step
+            std::vector<int> next_token_vec = sampler_->sample(dec_logits, dec_input_ids);
+            int next_id = next_token_vec[0];
+
+            // Stop Condition
+            if (next_id == eos_token_id_) {
+                break;
+            }
+
+            history_ids_.push_back(next_id);
+        }
+
+        // --- Step 3: Detokenize ---
+        // Remove start token
+        if (!history_ids_.empty()) history_ids_.erase(history_ids_.begin());
+
+        core::Tensor output_ids({1, (int64_t)history_ids_.size()}, core::DataType::kINT32);
+        std::memcpy(output_ids.data(), history_ids_.data(), history_ids_.size() * sizeof(int));
+
+        return tokenizer_->decode(output_ids);
+    }
+};
+
+// =================================================================================
+// Public API
+// =================================================================================
+
+Summarizer::Summarizer(const SummarizerConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 Summarizer::~Summarizer() = default;
 Summarizer::Summarizer(Summarizer&&) noexcept = default;
 Summarizer& Summarizer::operator=(Summarizer&&) noexcept = default;
 
-std::string Summarizer::predict(const std::string& text) {
-    std::string full_summary = "";
-    predict_stream(text, [&](const std::string& token_str) {
-        full_summary += token_str;
-    });
-    return full_summary;
-}
+std::string Summarizer::summarize(const std::string& text) {
+    if (!pimpl_) throw std::runtime_error("Summarizer is null.");
 
-void Summarizer::predict_stream(const std::string& text,
-                                std::function<void(const std::string&)> stream_callback) {
-    if (!pimpl_) throw std::runtime_error("Summarizer is in a moved-from state.");
+    // Optional: Add prefix for T5 ("summarize: " + text) if model expects it
+    std::string input_text = text;
+    if (pimpl_->config_.is_t5) {
+        input_text = "summarize: " + text;
+    }
 
-    // auto input_token_ids = pimpl_->tokenizer_->encode(text);
-    // input_token_ids.resize(pimpl_->config_.max_input_length, 0);
-
-    // auto decoder_token_ids = std::vector<int64_t>{pimpl_->tokenizer_->bos_token_id()};
-
-    // for (int i = 0; i < pimpl_->config_.max_summary_length; ++i) {
-    //     core::Tensor encoder_input({1, (int64_t)input_token_ids.size()}, core::DataType::kINT32);
-    //     encoder_input.copy_from_host(input_token_ids.data());
-
-    //     core::Tensor decoder_input({1, (int64_t)decoder_token_ids.size()}, core::DataType::kINT32);
-    //     decoder_input.copy_from_host(decoder_token_ids.data());
-
-    //     auto output_tensors = pimpl_->engine_->infer({encoder_input, decoder_input});
-    //     const core::Tensor& logits_tensor = output_tensors[0];
-
-    //     std::vector<float> logits;
-    //     logits.resize(logits_tensor.num_elements());
-    //     logits_tensor.copy_to_host(logits.data());
-
-    //     // --- Add sampling logic (greedy argmax) for the last token ---
-    //     int next_token_id = 0; // Placeholder for sampling result
-
-    //     // if (next_token_id == pimpl_->tokenizer_->eos_token_id()) {
-    //     //     break;
-    //     // }
-
-    //     // decoder_token_ids.push_back(next_token_id);
-    //     // std::string token_str = pimpl_->tokenizer_->decode({next_token_id});
-    //     // stream_callback(token_str);
-    // }
+    return pimpl_->generate_summary(input_text);
 }
 
 } // namespace xinfer::zoo::nlp

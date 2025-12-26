@@ -5,15 +5,26 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 
-namespace xinfer::core { class Tensor; }
-namespace xinfer::preproc { class ImageProcessor; }
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::generative {
 
     struct ColorizerConfig {
-        std::string engine_path;
+        // Hardware Target (Generative models run best on GPU/NPU)
+        xinfer::Target target = xinfer::Target::NVIDIA_TRT;
+
+        // Model Path (e.g., colorization_gan.engine)
+        // Expected Input: [1, 1, H, W] (L Channel)
+        // Expected Output: [1, 2, H, W] (a, b Channels)
+        std::string model_path;
+
+        // Input Specs
         int input_width = 256;
         int input_height = 256;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class Colorizer {
@@ -21,12 +32,19 @@ namespace xinfer::zoo::generative {
         explicit Colorizer(const ColorizerConfig& config);
         ~Colorizer();
 
-        Colorizer(const Colorizer&) = delete;
-        Colorizer& operator=(const Colorizer&) = delete;
+        // Move semantics
         Colorizer(Colorizer&&) noexcept;
         Colorizer& operator=(Colorizer&&) noexcept;
+        Colorizer(const Colorizer&) = delete;
+        Colorizer& operator=(const Colorizer&) = delete;
 
-        cv::Mat predict(const cv::Mat& grayscale_image);
+        /**
+         * @brief Colorize a grayscale image.
+         *
+         * @param gray_image Input image (can be CV_8UC1 or CV_8UC3, will be converted).
+         * @return The colorized image in BGR format.
+         */
+        cv::Mat colorize(const cv::Mat& gray_image);
 
     private:
         struct Impl;
@@ -34,4 +52,3 @@ namespace xinfer::zoo::generative {
     };
 
 } // namespace xinfer::zoo::generative
-

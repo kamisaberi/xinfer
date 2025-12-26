@@ -5,30 +5,47 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 
-namespace xinfer::core { class Tensor; }
-namespace xinfer::preproc { class ImageProcessor; }
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
+#include <xinfer/postproc/vision/types.h> // For BoundingBox
 
 namespace xinfer::zoo::vision {
 
-    struct VehicleAttributes {
-        std::string type;
-        float type_confidence;
-        std::string color;
-        float color_confidence;
-        std::string make;
-        float make_confidence;
-        std::string model;
-        float model_confidence;
+    /**
+     * @brief Result of Vehicle Identification.
+     */
+    struct VehicleResult {
+        // Detection Info
+        postproc::BoundingBox box;
+        std::string type;       // "Car", "Bus", "Truck", "Motorcycle"
+
+        // Attribute Info (if attribute model is enabled)
+        std::string make_model; // e.g., "Toyota Camry"
+        std::string color;      // e.g., "Silver"
+        float attr_confidence;
     };
 
     struct VehicleIdentifierConfig {
-        std::string engine_path;
-        std::string type_labels_path = "";
-        std::string color_labels_path = "";
-        std::string make_labels_path = "";
-        std::string model_labels_path = "";
-        int input_width = 224;
-        int input_height = 224;
+        // Hardware Target
+        xinfer::Target target = xinfer::Target::INTEL_OV;
+
+        // --- Stage 1: Detector (YOLO) ---
+        std::string det_model_path;
+        int det_input_width = 640;
+        int det_input_height = 640;
+        float det_conf_thresh = 0.5f;
+        float det_nms_thresh = 0.45f;
+        std::string det_labels_path; // Maps class ID 0->Person, 2->Car, etc.
+
+        // --- Stage 2: Attribute Classifier (Optional) ---
+        // If empty, only detection is performed.
+        std::string attr_model_path;
+        std::string attr_labels_path; // Text file with Make/Model names
+        int attr_input_width = 224;
+        int attr_input_height = 224;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class VehicleIdentifier {
@@ -36,12 +53,19 @@ namespace xinfer::zoo::vision {
         explicit VehicleIdentifier(const VehicleIdentifierConfig& config);
         ~VehicleIdentifier();
 
-        VehicleIdentifier(const VehicleIdentifier&) = delete;
-        VehicleIdentifier& operator=(const VehicleIdentifier&) = delete;
+        // Move semantics
         VehicleIdentifier(VehicleIdentifier&&) noexcept;
         VehicleIdentifier& operator=(VehicleIdentifier&&) noexcept;
+        VehicleIdentifier(const VehicleIdentifier&) = delete;
+        VehicleIdentifier& operator=(const VehicleIdentifier&) = delete;
 
-        VehicleAttributes predict(const cv::Mat& vehicle_image);
+        /**
+         * @brief Identify vehicles in a scene.
+         *
+         * @param image Input frame.
+         * @return List of vehicles with attributes.
+         */
+        std::vector<VehicleResult> identify(const cv::Mat& image);
 
     private:
         struct Impl;
@@ -49,4 +73,3 @@ namespace xinfer::zoo::vision {
     };
 
 } // namespace xinfer::zoo::vision
-

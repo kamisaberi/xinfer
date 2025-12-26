@@ -1,98 +1,80 @@
-#include <include/zoo/generative/outpainter.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
+#include <xinfer/zoo/generative/outpainter.h>
+#include <xinfer/core/logging.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
+// --- We reuse the Inpainter Zoo module ---
+#include <xinfer/zoo/generative/inpainter.h>
+
+#include <iostream>
+#include <algorithm>
 
 namespace xinfer::zoo::generative {
 
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
+
 struct Outpainter::Impl {
     OutpainterConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_image_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_mask_;
+
+    // The Inpainter module does all the heavy lifting.
+    std::unique_ptr<Inpainter> inpainter_;
+
+    Impl(const OutpainterConfig& config) : config_(config) {
+        initialize();
+    }
+
+    void initialize() {
+        // 1. Setup the underlying Inpainter
+        // We pass the same model paths to it.
+        InpainterConfig inpaint_cfg;
+        inpaint_cfg.target = config_.target;
+        inpainter_ = std::make_unique<Inpainter>(inpaint_cfg);
+    }
 };
 
+// =================================================================================
+// Public API
+// =================================================================================
+
 Outpainter::Outpainter(const OutpainterConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Outpainting engine file not found: " + pimpl_->config_.engine_path);
-    }
-
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-
-    if (pimpl_->engine_->get_num_inputs() != 2) {
-        throw std::runtime_error("Outpainting engine must have exactly two inputs (image and mask).");
-    }
-
-    pimpl_->preprocessor_image_ = std::make_unique<preproc::ImageProcessor>(
-        pimpl_->config_.input_width,
-        pimpl_->config_.input_height,
-        std::vector<float>{0.5f, 0.5f, 0.5f},
-        std::vector<float>{0.5f, 0.5f, 0.5f}
-    );
-
-    pimpl_->preprocessor_mask_ = std::make_unique<preproc::ImageProcessor>(
-        pimpl_->config_.input_width,
-        pimpl_->config_.input_height,
-        std::vector<float>{0.0f},
-        std::vector<float>{1.0f}
-    );
-}
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 Outpainter::~Outpainter() = default;
 Outpainter::Outpainter(Outpainter&&) noexcept = default;
 Outpainter& Outpainter::operator=(Outpainter&&) noexcept = default;
 
-cv::Mat Outpainter::predict(const cv::Mat& image, int top, int right, int bottom, int left) {
-    if (!pimpl_) throw std::runtime_error("Outpainter is in a moved-from state.");
+cv::Mat Outpainter::outpaint(const cv::Mat& image,
+                             int top, int bottom, int left, int right,
+                             const std::string& prompt) {
+    if (!pimpl_ || !pimpl_->inpainter_) throw std::runtime_error("Outpainter is null.");
 
+    // 1. Create a larger canvas
     int new_width = image.cols + left + right;
     int new_height = image.rows + top + bottom;
 
-    cv::Mat expanded_image = cv::Mat::zeros(new_height, new_width, image.type());
+    cv::Mat canvas = cv::Mat::zeros(new_height, new_width, image.type());
+
+    // 2. Place original image in the center
     cv::Rect roi(left, top, image.cols, image.rows);
-    image.copyTo(expanded_image(roi));
+    image.copyTo(canvas(roi));
 
-    cv::Mat mask = cv::Mat::zeros(new_height, new_width, CV_8UC1);
-    cv::rectangle(mask, roi, cv::Scalar(255), -1);
-    cv::bitwise_not(mask, mask); // Invert mask for outpainting
+    // 3. Create the Inpainting Mask
+    // The mask is the INVERSE of the ROI. We want to fill everything *except* the center.
+    cv::Mat mask = cv::Mat::ones(new_height, new_width, CV_8U) * 255;
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor image_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_image_->process(expanded_image, image_tensor);
+    // Set the region where the original image is to 0 (don't touch)
+    mask(roi).setTo(cv::Scalar(0));
 
-    auto mask_input_shape = pimpl_->engine_->get_input_shape(1);
-    core::Tensor mask_tensor(mask_input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_mask_->process(mask, mask_tensor);
+    // 4. Call the Inpainter
+    // The inpainter will fill the white areas of the mask.
+    // The final image returned by the inpainter will have the expanded content.
 
-    auto output_tensors = pimpl_->engine_->infer({image_tensor, mask_tensor});
-    const core::Tensor& outpainted_image_tensor = output_tensors[0];
+    // For best results, outpainting is often done iteratively in smaller strips,
+    // but a single-shot inpaint call is simpler to demonstrate.
+    // To do that, the canvas+mask would need to be resized to the model's input size.
+    // For this example, we assume the inpainter's internal preprocessor handles resizing.
 
-    auto output_shape = outpainted_image_tensor.shape();
-    const int C = output_shape[1];
-    const int H = output_shape[2];
-    const int W = output_shape[3];
-
-    std::vector<float> h_output(outpainted_image_tensor.num_elements());
-    outpainted_image_tensor.copy_to_host(h_output.data());
-
-    cv::Mat outpainted_image_chw;
-    std::vector<cv::Mat> channels;
-    for(int i = 0; i < C; ++i) {
-        channels.emplace_back(H, W, CV_32F, h_output.data() + i * H * W);
-    }
-    cv::merge(channels, outpainted_image_chw);
-
-    cv::Mat outpainted_image_bgr, final_image;
-    outpainted_image_chw.convertTo(outpainted_image_bgr, CV_8UC3, 255.0, 127.5);
-
-    cv::resize(outpainted_image_bgr, final_image, cv::Size(new_width, new_height), 0, 0, cv::INTER_CUBIC);
-
-    return final_image;
+    return pimpl_->inpainter_->inpaint(canvas, mask, prompt);
 }
 
 } // namespace xinfer::zoo::generative

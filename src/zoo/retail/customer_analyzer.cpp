@@ -1,173 +1,239 @@
-#include <include/zoo/retail/customer_analyzer.h>
-#include <stdexcept>
-#include <vector>
-#include <map>
+#include <xinfer/zoo/retail/customer_analyzer.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
-#include <include/postproc/detection.h>
-#include <include/postproc/yolo_decoder.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+#include <xinfer/postproc/factory.h>
+#include <xinfer/postproc/vision/classification_interface.h>
+#include <xinfer/postproc/vision/tracker_interface.h>
+
+#include <iostream>
+#include <fstream>
+#include <map>
 
 namespace xinfer::zoo::retail {
 
-const int MAX_DECODED_CUSTOMERS = 512;
-
-struct CustomerTrack {
-    int id;
-    cv::Rect box;
-    vision::Pose pose;
-    int age = 0;
+// =================================================================================
+// Internal State for Tracking
+// =================================================================================
+struct TrackedCustomerState {
+    CustomerAttributes attrs;
+    int frames_since_update = 9999; // Force update immediately on first sight
 };
 
-float calculate_customer_iou(const cv::Rect& box1, const cv::Rect& box2) {
-    cv::Rect intersection = box1 & box2;
-    float inter_area = intersection.area();
-    float union_area = box1.area() + box2.area() - inter_area;
-    return (union_area > 0.0f) ? inter_area / union_area : 0.0f;
-}
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
 struct CustomerAnalyzer::Impl {
-    CustomerAnalyzerConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_detector_;
-    std::unique_ptr<vision::PoseEstimator> pose_estimator_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_detector_;
+    AnalyzerConfig config_;
 
-    core::Tensor decoded_boxes_gpu;
-    core::Tensor decoded_scores_gpu;
-    core::Tensor decoded_classes_gpu;
+    // --- Pipeline 1: Detection ---
+    std::unique_ptr<backends::IBackend> det_engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> det_preproc_;
+    std::unique_ptr<postproc::IDetectionPostprocessor> det_postproc_;
+    std::unique_ptr<postproc::ITracker> tracker_;
+    core::Tensor det_input, det_output;
 
-    std::vector<float> h_boxes;
-    std::vector<float> h_scores;
+    // --- Pipeline 2: Attribute Classification ---
+    std::unique_ptr<backends::IBackend> attr_engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> attr_preproc_;
+    std::unique_ptr<postproc::IClassificationPostprocessor> attr_postproc_;
+    core::Tensor attr_input, attr_output;
+    std::vector<std::string> attr_labels_;
 
-    std::vector<CustomerTrack> active_tracks;
-    int next_track_id = 0;
-    cv::Mat heatmap;
+    // Cache
+    std::map<int, TrackedCustomerState> state_cache_;
+
+    Impl(const AnalyzerConfig& config) : config_(config) {
+        initialize();
+    }
+
+    void initialize() {
+        // 1. Setup Detector
+        det_engine_ = backends::BackendFactory::create(config_.target);
+        xinfer::Config d_cfg; d_cfg.model_path = config_.det_model_path;
+        d_cfg.vendor_params = config_.vendor_params;
+
+        if (!det_engine_->load_model(d_cfg.model_path)) {
+            throw std::runtime_error("CustomerAnalyzer: Failed to load detector.");
+        }
+
+        det_preproc_ = preproc::create_image_preprocessor(config_.target);
+        preproc::ImagePreprocConfig dp_cfg;
+        dp_cfg.target_width = config_.det_input_width;
+        dp_cfg.target_height = config_.det_input_height;
+        dp_cfg.target_format = preproc::ImageFormat::RGB;
+        dp_cfg.layout_nchw = true;
+        det_preproc_->init(dp_cfg);
+
+        det_postproc_ = postproc::create_detection(config_.target);
+        postproc::DetectionConfig dpost_cfg;
+        dpost_cfg.conf_threshold = config_.det_conf;
+        dpost_cfg.num_classes = 1; // Assuming person-only model
+        det_postproc_->init(dpost_cfg);
+
+        tracker_ = postproc::create_tracker(config_.target);
+        postproc::TrackerConfig trk_cfg;
+        trk_cfg.max_age = 30;
+        tracker_->init(trk_cfg);
+
+        // 2. Setup Attribute Classifier
+        attr_engine_ = backends::BackendFactory::create(config_.target);
+        xinfer::Config a_cfg; a_cfg.model_path = config_.attr_model_path;
+
+        if (!attr_engine_->load_model(a_cfg.model_path)) {
+            XINFER_LOG_ERROR("Failed to load attribute model. Analytics will be disabled.");
+        }
+
+        attr_preproc_ = preproc::create_image_preprocessor(config_.target);
+        preproc::ImagePreprocConfig ap_cfg;
+        ap_cfg.target_width = config_.attr_input_width;
+        ap_cfg.target_height = config_.attr_input_height;
+        ap_cfg.target_format = preproc::ImageFormat::RGB;
+        ap_cfg.norm_params = {{123.675, 116.28, 103.53}, {58.395, 57.12, 57.375}}; // ImageNet defaults
+        attr_preproc_->init(ap_cfg);
+
+        attr_postproc_ = postproc::create_classification(config_.target);
+        postproc::ClassificationConfig apost_cfg;
+        apost_cfg.top_k = 1;
+        load_labels(config_.attr_labels_path);
+        apost_cfg.labels = attr_labels_;
+        attr_postproc_->init(apost_cfg);
+    }
+
+    void load_labels(const std::string& path) {
+        if (path.empty()) return;
+        std::ifstream file(path);
+        std::string line;
+        while (std::getline(file, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            attr_labels_.push_back(line);
+        }
+    }
+
+    // Helper: Parse classification result into Age/Gender
+    // Assumes labels like "Female_18-25" or two separate heads handled by the model.
+    // Here we assume a flattened label list for simplicity.
+    void parse_attributes(const postproc::ClassResult& res, CustomerAttributes& attrs) {
+        // Example Label format: "Male_25-34"
+        std::string lbl = res.label;
+        size_t underscore = lbl.find('_');
+        if (underscore != std::string::npos) {
+            attrs.gender = lbl.substr(0, underscore);
+            attrs.age_group = lbl.substr(underscore + 1);
+        } else {
+            attrs.gender = lbl;
+            attrs.age_group = "Unknown";
+        }
+        attrs.confidence = res.score;
+        attrs.is_analyzed = true;
+    }
 };
 
-CustomerAnalyzer::CustomerAnalyzer(const CustomerAnalyzerConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.detection_engine_path).good()) {
-        throw std::runtime_error("Customer detector engine file not found: " + pimpl_->config_.detection_engine_path);
-    }
-    pimpl_->engine_detector_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.detection_engine_path);
+// =================================================================================
+// Public API
+// =================================================================================
 
-    vision::PoseEstimatorConfig pose_config;
-    pose_config.engine_path = pimpl_->config_.pose_engine_path;
-    pimpl_->pose_estimator_ = std::make_unique<vision::PoseEstimator>(pose_config);
-
-    pimpl_->preprocessor_detector_ = std::make_unique<preproc::ImageProcessor>(pimpl_->config_.detection_input_width, pimpl_->config_.detection_input_height, true);
-
-    pimpl_->decoded_boxes_gpu = core::Tensor({MAX_DECODED_CUSTOMERS, 4}, core::DataType::kFLOAT);
-    pimpl_->decoded_scores_gpu = core::Tensor({MAX_DECODED_CUSTOMERS}, core::DataType::kFLOAT);
-    pimpl_->decoded_classes_gpu = core::Tensor({MAX_DECODED_CUSTOMERS}, core::DataType::kINT32);
-    pimpl_->h_boxes.resize(MAX_DECODED_CUSTOMERS * 4);
-    pimpl_->h_scores.resize(MAX_DECODED_CUSTOMERS);
-}
+CustomerAnalyzer::CustomerAnalyzer(const AnalyzerConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 CustomerAnalyzer::~CustomerAnalyzer() = default;
 CustomerAnalyzer::CustomerAnalyzer(CustomerAnalyzer&&) noexcept = default;
 CustomerAnalyzer& CustomerAnalyzer::operator=(CustomerAnalyzer&&) noexcept = default;
 
-std::vector<TrackedCustomer> CustomerAnalyzer::track(const cv::Mat& frame) {
-    if (!pimpl_) throw std::runtime_error("CustomerAnalyzer is in a moved-from state.");
+void CustomerAnalyzer::reset() {
+    if (pimpl_) {
+        pimpl_->tracker_->reset();
+        pimpl_->state_cache_.clear();
+    }
+}
 
-    if (pimpl_->heatmap.empty()) {
-        pimpl_->heatmap = cv::Mat::zeros(frame.size(), CV_32F);
+std::vector<CustomerResult> CustomerAnalyzer::analyze(const cv::Mat& image) {
+    if (!pimpl_) throw std::runtime_error("CustomerAnalyzer is null.");
+
+    std::vector<CustomerResult> results;
+
+    // --- 1. Detect People ---
+    preproc::ImageFrame frame;
+    frame.data = image.data;
+    frame.width = image.cols;
+    frame.height = image.rows;
+    frame.format = preproc::ImageFormat::BGR;
+
+    pimpl_->det_preproc_->process(frame, pimpl_->det_input);
+    pimpl_->det_engine_->predict({pimpl_->det_input}, {pimpl_->det_output});
+    auto raw_dets = pimpl_->det_postproc_->process({pimpl_->det_output});
+
+    // Scale boxes
+    std::vector<postproc::BoundingBox> valid_dets;
+    float scale_x = (float)image.cols / pimpl_->config_.det_input_width;
+    float scale_y = (float)image.rows / pimpl_->config_.det_input_height;
+
+    for(auto& det : raw_dets) {
+        det.x1 *= scale_x; det.x2 *= scale_x;
+        det.y1 *= scale_y; det.y2 *= scale_y;
+        valid_dets.push_back(det);
     }
 
-    auto input_shape = pimpl_->engine_detector_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_detector_->process(frame, input_tensor);
+    // --- 2. Track People ---
+    auto tracks = pimpl_->tracker_->update(valid_dets);
 
-    auto output_tensors = pimpl_->engine_detector_->infer({input_tensor});
+    // --- 3. Analyze Attributes (with Caching) ---
+    for (const auto& trk : tracks) {
+        CustomerResult res;
+        res.track_id = trk.track_id;
+        res.box = trk.box;
 
-    postproc::yolo::decode(output_tensors[0], pimpl_->config_.detection_confidence_threshold,
-                           pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->decoded_classes_gpu);
+        // Check Cache
+        TrackedCustomerState& state = pimpl_->state_cache_[trk.track_id];
 
-    std::vector<int> nms_indices = postproc::detection::nms(
-        pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->config_.detection_nms_iou_threshold);
+        // Need update?
+        if (state.frames_since_update >= pimpl_->config_.attribute_update_interval) {
 
-    pimpl_->decoded_boxes_gpu.copy_to_host(pimpl_->h_boxes.data());
+            // Valid Crop?
+            cv::Rect roi(
+                (int)std::max(0.0f, trk.box.x1),
+                (int)std::max(0.0f, trk.box.y1),
+                (int)(trk.box.x2 - trk.box.x1),
+                (int)(trk.box.y2 - trk.box.y1)
+            );
+            roi &= cv::Rect(0, 0, image.cols, image.rows);
 
-    std::vector<cv::Rect> current_detections;
-    float scale_x = (float)frame.cols / pimpl_->config_.detection_input_width;
-    float scale_y = (float)frame.rows / pimpl_->config_.detection_input_height;
+            if (roi.width > 20 && roi.height > 20) {
+                cv::Mat crop = image(roi);
 
-    for (int idx : nms_indices) {
-        float x1 = pimpl_->h_boxes[idx * 4 + 0] * scale_x;
-        float y1 = pimpl_->h_boxes[idx * 4 + 1] * scale_y;
-        float x2 = pimpl_->h_boxes[idx * 4 + 2] * scale_x;
-        float y2 = pimpl_->h_boxes[idx * 4 + 3] * scale_y;
-        current_detections.emplace_back((int)x1, (int)y1, (int)(x2-x1), (int)(y2-y1));
-    }
+                // Attribute Inference
+                preproc::ImageFrame c_frame{crop.data, crop.cols, crop.rows, preproc::ImageFormat::BGR};
+                pimpl_->attr_preproc_->process(c_frame, pimpl_->attr_input);
+                pimpl_->attr_engine_->predict({pimpl_->attr_input}, {pimpl_->attr_output});
 
-    std::vector<bool> matched_detections(current_detections.size(), false);
-    std::vector<bool> matched_tracks(pimpl_->active_tracks.size(), false);
+                // Postprocess
+                auto attr_res = pimpl_->attr_postproc_->process(pimpl_->attr_output);
 
-    for (size_t i = 0; i < pimpl_->active_tracks.size(); ++i) {
-        float best_iou = 0.0f;
-        int best_match_idx = -1;
-        for (size_t j = 0; j < current_detections.size(); ++j) {
-            if (matched_detections[j]) continue;
-            float iou = calculate_customer_iou(pimpl_->active_tracks[i].box, current_detections[j]);
-            if (iou > best_iou) { best_iou = iou; best_match_idx = j; }
+                if (!attr_res.empty() && !attr_res[0].empty()) {
+                    pimpl_->parse_attributes(attr_res[0][0], state.attrs);
+                    state.frames_since_update = 0;
+                }
+            }
+        } else {
+            state.frames_since_update++;
         }
-        if (best_iou > 0.3f) {
-            pimpl_->active_tracks[i].box = current_detections[best_match_idx];
-            pimpl_->active_tracks[i].age = 0;
-            matched_detections[best_match_idx] = true;
-            matched_tracks[i] = true;
-        }
+
+        res.attributes = state.attrs;
+        results.push_back(res);
     }
 
-    for (size_t i = 0; i < pimpl_->active_tracks.size(); ++i) {
-        if (!matched_tracks[i]) pimpl_->active_tracks[i].age++;
-    }
-
-    for (size_t j = 0; j < current_detections.size(); ++j) {
-        if (!matched_detections[j]) {
-            CustomerTrack new_track;
-            new_track.id = pimpl_->next_track_id++;
-            new_track.box = current_detections[j];
-            pimpl_->active_tracks.push_back(new_track);
-        }
-    }
-
-    pimpl_->active_tracks.erase(std::remove_if(pimpl_->active_tracks.begin(), pimpl_->active_tracks.end(),
-        [](const CustomerTrack& t) { return t.age > 30; }), pimpl_->active_tracks.end());
-
-    std::vector<TrackedCustomer> results;
-    for (auto& track : pimpl_->active_tracks) {
-        cv::Rect roi = track.box & cv::Rect(0, 0, frame.cols, frame.rows);
-        if (roi.width > 0 && roi.height > 0) {
-            cv::Mat customer_patch = frame(roi);
-            track.pose = pimpl_->pose_estimator_->predict(customer_patch)[0];
-
-            TrackedCustomer res;
-            res.track_id = track.id;
-            res.bounding_box = track.box;
-            res.pose = track.pose;
-            results.push_back(res);
-
-            cv::Point center = (track.box.tl() + track.box.br()) * 0.5;
-            pimpl_->heatmap.at<float>(center) += 1.0f;
-        }
+    // Cleanup old cache entries
+    // (Simple logic: if cache size > 100, remove IDs not seen recently)
+    // In production, sync this with tracker dead tracks.
+    if (pimpl_->state_cache_.size() > 200) {
+        pimpl_->state_cache_.clear(); // Hard reset for simplicity
     }
 
     return results;
-}
-
-cv::Mat CustomerAnalyzer::generate_heatmap() {
-    if (!pimpl_ || pimpl_->heatmap.empty()) return cv::Mat();
-
-    cv::Mat normalized_heatmap;
-    cv::normalize(pimpl_->heatmap, normalized_heatmap, 0, 255, cv::NORM_MINMAX, CV_8U);
-
-    cv::Mat color_heatmap;
-    cv::applyColorMap(normalized_heatmap, color_heatmap, cv::COLORMAP_JET);
-
-    return color_heatmap;
 }
 
 } // namespace xinfer::zoo::retail

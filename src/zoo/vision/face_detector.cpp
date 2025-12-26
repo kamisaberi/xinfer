@@ -1,99 +1,121 @@
-#include <include/zoo/vision/face_detector.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
+#include <xinfer/zoo/vision/face_detector.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
-#include <include/postproc/detection.h>
-#include <include/postproc/yolo_decoder.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+#include <xinfer/postproc/factory.h>
+
+#include <iostream>
 
 namespace xinfer::zoo::vision {
 
-const int MAX_DECODED_FACES = 1024;
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
 struct FaceDetector::Impl {
     FaceDetectorConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_;
 
-    core::Tensor decoded_boxes_gpu;
-    core::Tensor decoded_scores_gpu;
-    core::Tensor decoded_classes_gpu;
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> preproc_;
+    std::unique_ptr<postproc::IDetectionPostprocessor> postproc_;
 
-    std::vector<float> h_boxes;
-    std::vector<float> h_scores;
+    // Data Containers
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
 
     Impl(const FaceDetectorConfig& config) : config_(config) {
-        decoded_boxes_gpu = core::Tensor({MAX_DECODED_FACES, 4}, core::DataType::kFLOAT);
-        decoded_scores_gpu = core::Tensor({MAX_DECODED_FACES}, core::DataType::kFLOAT);
-        decoded_classes_gpu = core::Tensor({MAX_DECODED_FACES}, core::DataType::kINT32);
-        h_boxes.resize(MAX_DECODED_FACES * 4);
-        h_scores.resize(MAX_DECODED_FACES);
+        initialize();
+    }
+
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
+
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("FaceDetector: Failed to load model " + config_.model_path);
+        }
+
+        // 2. Setup Preprocessor
+        preproc_ = preproc::create_image_preprocessor(config_.target);
+
+        preproc::ImagePreprocConfig pre_cfg;
+        pre_cfg.target_width = config_.input_width;
+        pre_cfg.target_height = config_.input_height;
+        pre_cfg.target_format = preproc::ImageFormat::RGB;
+        pre_cfg.layout_nchw = true;
+        preproc_->init(pre_cfg);
+
+        // 3. Setup Postprocessor
+        // We use the generic Detection processor (YOLO style)
+        postproc_ = postproc::create_detection(config_.target);
+
+        postproc::DetectionConfig post_cfg;
+        post_cfg.conf_threshold = config_.conf_threshold;
+        post_cfg.nms_threshold = config_.nms_threshold;
+        // Face detection usually implies 1 class (Face), but model might have more.
+        post_cfg.num_classes = 1;
+        postproc_->init(post_cfg);
     }
 };
 
-FaceDetector::FaceDetector(const FaceDetectorConfig& config) : pimpl_(new Impl(config)) {
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Face detection engine file not found: " + pimpl_->config_.engine_path);
-    }
+// =================================================================================
+// Public API
+// =================================================================================
 
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-
-    pimpl_->preprocessor_ = std::make_unique<preproc::ImageProcessor>(
-        pimpl_->config_.input_width,
-        pimpl_->config_.input_height,
-        true
-    );
-}
+FaceDetector::FaceDetector(const FaceDetectorConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 FaceDetector::~FaceDetector() = default;
 FaceDetector::FaceDetector(FaceDetector&&) noexcept = default;
 FaceDetector& FaceDetector::operator=(FaceDetector&&) noexcept = default;
 
-std::vector<Face> FaceDetector::predict(const cv::Mat& image) {
-    if (!pimpl_) throw std::runtime_error("FaceDetector is in a moved-from state.");
+std::vector<FaceResult> FaceDetector::detect(const cv::Mat& image) {
+    if (!pimpl_) throw std::runtime_error("FaceDetector is null.");
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(image, input_tensor);
+    // 1. Preprocess
+    preproc::ImageFrame frame;
+    frame.data = image.data;
+    frame.width = image.cols;
+    frame.height = image.rows;
+    frame.format = preproc::ImageFormat::BGR;
 
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& raw_output = output_tensors[0];
+    pimpl_->preproc_->process(frame, pimpl_->input_tensor);
 
-    postproc::yolo::decode(raw_output, pimpl_->config_.confidence_threshold,
-                           pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->decoded_classes_gpu);
+    // 2. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-    std::vector<int> nms_indices = postproc::detection::nms(
-        pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->config_.nms_iou_threshold);
+    // 3. Postprocess
+    // The generic detector returns BoundingBox structs
+    auto raw_detections = pimpl_->postproc_->process({pimpl_->output_tensor});
 
-    std::vector<Face> final_faces;
-    if (nms_indices.empty()) {
-        return final_faces;
-    }
-
-    pimpl_->decoded_boxes_gpu.copy_to_host(pimpl_->h_boxes.data());
-    pimpl_->decoded_scores_gpu.copy_to_host(pimpl_->h_scores.data());
+    // 4. Map to FaceResult & Rescale
+    std::vector<FaceResult> faces;
+    faces.reserve(raw_detections.size());
 
     float scale_x = (float)image.cols / pimpl_->config_.input_width;
     float scale_y = (float)image.rows / pimpl_->config_.input_height;
 
-    for (int idx : nms_indices) {
-        Face face;
-        face.x1 = pimpl_->h_boxes[idx * 4 + 0] * scale_x;
-        face.y1 = pimpl_->h_boxes[idx * 4 + 1] * scale_y;
-        face.x2 = pimpl_->h_boxes[idx * 4 + 2] * scale_x;
-        face.y2 = pimpl_->h_boxes[idx * 4 + 3] * scale_y;
-        face.confidence = pimpl_->h_scores[idx];
+    for (const auto& det : raw_detections) {
+        FaceResult face;
+        // Scale coordinates back to original image size
+        face.x1 = det.x1 * scale_x;
+        face.y1 = det.y1 * scale_y;
+        face.x2 = det.x2 * scale_x;
+        face.y2 = det.y2 * scale_y;
+        face.confidence = det.confidence;
 
-        // Landmark decoding would require a model that outputs them
-        // and a corresponding decoder kernel. This is a placeholder.
-        // For a landmark model, raw_output would have more channels.
-
-        final_faces.push_back(face);
+        faces.push_back(face);
     }
 
-    return final_faces;
+    return faces;
 }
 
 } // namespace xinfer::zoo::vision

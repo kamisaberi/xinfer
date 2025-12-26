@@ -1,102 +1,171 @@
-#include <include/zoo/vision/smoke_flame_detector.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
+#include <xinfer/zoo/vision/smoke_flame_detector.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
-#include <include/postproc/detection.h>
-#include <include/postproc/yolo_decoder.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+#include <xinfer/postproc/factory.h>
+
+#include <iostream>
 
 namespace xinfer::zoo::vision {
 
-const int MAX_DECODED_EVENTS = 1024;
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
 struct SmokeFlameDetector::Impl {
-    SmokeFlameDetectorConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_;
+    SmokeFlameConfig config_;
 
-    core::Tensor decoded_boxes_gpu;
-    core::Tensor decoded_scores_gpu;
-    core::Tensor decoded_classes_gpu;
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> preproc_;
+    std::unique_ptr<postproc::IDetectionPostprocessor> postproc_;
 
-    std::vector<float> h_boxes;
-    std::vector<float> h_scores;
-    std::vector<int> h_classes;
+    // Data Containers
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
 
-    Impl(const SmokeFlameDetectorConfig& config) : config_(config) {
-        decoded_boxes_gpu = core::Tensor({MAX_DECODED_EVENTS, 4}, core::DataType::kFLOAT);
-        decoded_scores_gpu = core::Tensor({MAX_DECODED_EVENTS}, core::DataType::kFLOAT);
-        decoded_classes_gpu = core::Tensor({MAX_DECODED_EVENTS}, core::DataType::kINT32);
-        h_boxes.resize(MAX_DECODED_EVENTS * 4);
-        h_scores.resize(MAX_DECODED_EVENTS);
-        h_classes.resize(MAX_DECODED_EVENTS);
+    Impl(const SmokeFlameConfig& config) : config_(config) {
+        initialize();
+    }
+
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
+
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("SmokeFlameDetector: Failed to load model " + config_.model_path);
+        }
+
+        // 2. Setup Preprocessor
+        preproc_ = preproc::create_image_preprocessor(config_.target);
+
+        preproc::ImagePreprocConfig pre_cfg;
+        pre_cfg.target_width = config_.input_width;
+        pre_cfg.target_height = config_.input_height;
+        pre_cfg.target_format = preproc::ImageFormat::RGB;
+        pre_cfg.layout_nchw = true;
+        preproc_->init(pre_cfg);
+
+        // 3. Setup Postprocessor (YOLO Logic)
+        postproc_ = postproc::create_detection(config_.target);
+
+        postproc::DetectionConfig post_cfg;
+        // Use the lower of the two thresholds to catch everything initially
+        post_cfg.conf_threshold = std::min(config_.fire_thresh, config_.smoke_thresh);
+        post_cfg.nms_threshold = config_.nms_threshold;
+        postproc_->init(post_cfg);
     }
 };
 
-SmokeFlameDetector::SmokeFlameDetector(const SmokeFlameDetectorConfig& config) : pimpl_(new Impl(config)) {
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Smoke/flame detection engine file not found: " + pimpl_->config_.engine_path);
-    }
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-    pimpl_->preprocessor_ = std::make_unique<preproc::ImageProcessor>(pimpl_->config_.input_width, pimpl_->config_.input_height, true);
-}
+// =================================================================================
+// Public API
+// =================================================================================
+
+SmokeFlameDetector::SmokeFlameDetector(const SmokeFlameConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 SmokeFlameDetector::~SmokeFlameDetector() = default;
 SmokeFlameDetector::SmokeFlameDetector(SmokeFlameDetector&&) noexcept = default;
 SmokeFlameDetector& SmokeFlameDetector::operator=(SmokeFlameDetector&&) noexcept = default;
 
-std::vector<DetectionEvent> SmokeFlameDetector::predict(const cv::Mat& image) {
-    if (!pimpl_) throw std::runtime_error("SmokeFlameDetector is in a moved-from state.");
+std::vector<HazardResult> SmokeFlameDetector::detect(const cv::Mat& image) {
+    if (!pimpl_) throw std::runtime_error("SmokeFlameDetector is null.");
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(image, input_tensor);
+    // 1. Preprocess
+    preproc::ImageFrame frame;
+    frame.data = image.data;
+    frame.width = image.cols;
+    frame.height = image.rows;
+    frame.format = preproc::ImageFormat::BGR;
 
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& raw_output = output_tensors[0];
+    pimpl_->preproc_->process(frame, pimpl_->input_tensor);
 
-    postproc::yolo::decode(raw_output, pimpl_->config_.confidence_threshold,
-                           pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->decoded_classes_gpu);
+    // 2. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-    std::vector<int> nms_indices = postproc::detection::nms(
-        pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->config_.nms_iou_threshold);
+    // 3. Postprocess
+    auto raw_detections = pimpl_->postproc_->process({pimpl_->output_tensor});
 
-    std::vector<DetectionEvent> final_events;
-    if (nms_indices.empty()) {
-        return final_events;
-    }
-
-    pimpl_->decoded_boxes_gpu.copy_to_host(pimpl_->h_boxes.data());
-    pimpl_->decoded_scores_gpu.copy_to_host(pimpl_->h_scores.data());
-    pimpl_->decoded_classes_gpu.copy_to_host(pimpl_->h_classes.data());
+    // 4. Filter & Scale
+    std::vector<HazardResult> hazards;
+    hazards.reserve(raw_detections.size());
 
     float scale_x = (float)image.cols / pimpl_->config_.input_width;
     float scale_y = (float)image.rows / pimpl_->config_.input_height;
 
-    for (int idx : nms_indices) {
-        DetectionEvent event;
-        float x1 = pimpl_->h_boxes[idx * 4 + 0] * scale_x;
-        float y1 = pimpl_->h_boxes[idx * 4 + 1] * scale_y;
-        float x2 = pimpl_->h_boxes[idx * 4 + 2] * scale_x;
-        float y2 = pimpl_->h_boxes[idx * 4 + 3] * scale_y;
-        event.bounding_box = cv::Rect(cv::Point((int)x1, (int)y1), cv::Point((int)x2, (int)y2));
-        event.confidence = pimpl_->h_scores[idx];
+    for (const auto& det : raw_detections) {
+        HazardType type = HazardType::UNKNOWN;
+        float thresh = 1.0f;
 
-        int class_id = pimpl_->h_classes[idx];
-        if (class_id == 0) { // Assuming class 0 is "smoke"
-            event.type = DetectionEvent::Type::SMOKE;
-        } else if (class_id == 1) { // Assuming class 1 is "flame"
-            event.type = DetectionEvent::Type::FLAME;
+        // Classify based on Config
+        if (det.class_id == pimpl_->config_.class_id_fire) {
+            type = HazardType::FIRE;
+            thresh = pimpl_->config_.fire_thresh;
+        } else if (det.class_id == pimpl_->config_.class_id_smoke) {
+            type = HazardType::SMOKE;
+            thresh = pimpl_->config_.smoke_thresh;
         } else {
-            continue;
+            continue; // Ignore other classes if model has them
         }
 
-        final_events.push_back(event);
+        // Apply specific threshold
+        if (det.confidence < thresh) continue;
+
+        HazardResult res;
+        res.type = type;
+        res.confidence = det.confidence;
+
+        // Scale Box
+        res.box.x1 = det.x1 * scale_x;
+        res.box.y1 = det.y1 * scale_y;
+        res.box.x2 = det.x2 * scale_x;
+        res.box.y2 = det.y2 * scale_y;
+        res.box.class_id = det.class_id;
+
+        hazards.push_back(res);
     }
 
-    return final_events;
+    return hazards;
+}
+
+void SmokeFlameDetector::draw_alerts(cv::Mat& image, const std::vector<HazardResult>& results) {
+    for (const auto& h : results) {
+        cv::Scalar color;
+        std::string label;
+
+        if (h.type == HazardType::FIRE) {
+            color = cv::Scalar(0, 0, 255); // Red
+            label = "FIRE";
+        } else {
+            color = cv::Scalar(128, 128, 128); // Grey
+            label = "SMOKE";
+        }
+
+        cv::Rect rect((int)h.box.x1, (int)h.box.y1,
+                      (int)(h.box.x2 - h.box.x1), (int)(h.box.y2 - h.box.y1));
+
+        cv::rectangle(image, rect, color, 2);
+
+        // Label background
+        std::string text = label + " " + std::to_string((int)(h.confidence * 100)) + "%";
+        int baseline;
+        cv::Size textSize = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 0.6, 2, &baseline);
+
+        cv::rectangle(image,
+                      cv::Point(rect.x, rect.y - textSize.height - 5),
+                      cv::Point(rect.x + textSize.width, rect.y),
+                      color, -1);
+
+        cv::putText(image, text, cv::Point(rect.x, rect.y - 5),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 255), 2);
+    }
 }
 
 } // namespace xinfer::zoo::vision

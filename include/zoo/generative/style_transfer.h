@@ -5,15 +5,25 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 
-namespace xinfer::core { class Tensor; }
-namespace xinfer::preproc { class ImageProcessor; }
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::generative {
 
     struct StyleTransferConfig {
-        std::string engine_path;
+        // Hardware Target
+        xinfer::Target target = xinfer::Target::INTEL_OV;
+
+        // Model Path (e.g., van_gogh_style.onnx)
+        // Each model is trained for a *single* style.
+        std::string model_path;
+
+        // Input Specs (Can be variable, but fixed is faster)
         int input_width = 512;
         int input_height = 512;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class StyleTransfer {
@@ -21,12 +31,19 @@ namespace xinfer::zoo::generative {
         explicit StyleTransfer(const StyleTransferConfig& config);
         ~StyleTransfer();
 
-        StyleTransfer(const StyleTransfer&) = delete;
-        StyleTransfer& operator=(const StyleTransfer&) = delete;
+        // Move semantics
         StyleTransfer(StyleTransfer&&) noexcept;
         StyleTransfer& operator=(StyleTransfer&&) noexcept;
+        StyleTransfer(const StyleTransfer&) = delete;
+        StyleTransfer& operator=(const StyleTransfer&) = delete;
 
-        cv::Mat predict(const cv::Mat& content_image);
+        /**
+         * @brief Apply the learned style to a content image.
+         *
+         * @param content_image The photo to be transformed.
+         * @return The stylized image.
+         */
+        cv::Mat apply(const cv::Mat& content_image);
 
     private:
         struct Impl;
@@ -34,4 +51,3 @@ namespace xinfer::zoo::generative {
     };
 
 } // namespace xinfer::zoo::generative
-

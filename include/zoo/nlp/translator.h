@@ -3,15 +3,38 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <functional>
+
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::nlp {
 
     struct TranslatorConfig {
-        std::string engine_path;
-        std::string vocab_path;
-        int max_input_length = 512;
-        int max_output_length = 512;
+        // Hardware Target
+        xinfer::Target target = xinfer::Target::NVIDIA_TRT;
+
+        // --- Models ---
+        // Translation models are often split (Encoder / Decoder)
+        std::string encoder_path;
+        std::string decoder_path;
+
+        // --- Tokenizer ---
+        std::string tokenizer_path; // sentencepiece.model or vocab.json
+
+        // --- Languages ---
+        // Default codes (e.g., "eng_Latn", "fra_Latn" for NLLB)
+        std::string src_lang;
+        std::string tgt_lang;
+
+        // --- Generation ---
+        int max_source_length = 128;
+        int max_target_length = 128;
+
+        // Beam Search size (1 = Greedy)
+        int beam_size = 1;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class Translator {
@@ -19,15 +42,34 @@ namespace xinfer::zoo::nlp {
         explicit Translator(const TranslatorConfig& config);
         ~Translator();
 
-        Translator(const Translator&) = delete;
-        Translator& operator=(const Translator&) = delete;
+        // Move semantics
         Translator(Translator&&) noexcept;
         Translator& operator=(Translator&&) noexcept;
+        Translator(const Translator&) = delete;
+        Translator& operator=(const Translator&) = delete;
 
-        std::string predict(const std::string& text);
+        /**
+         * @brief Change translation direction at runtime.
+         *
+         * @param src Source language code (e.g., "eng_Latn").
+         * @param tgt Target language code (e.g., "deu_Latn").
+         * @return True if language tokens were found in vocabulary.
+         */
+        bool set_languages(const std::string& src, const std::string& tgt);
 
-        void predict_stream(const std::string& text,
-                            std::function<void(const std::string&)> stream_callback);
+        /**
+         * @brief Translate text.
+         *
+         * Pipeline:
+         * 1. Tokenize Input + Add Src Lang Token.
+         * 2. Encoder Inference.
+         * 3. Decoder Inference (Autoregressive loop starting with Tgt Lang Token).
+         * 4. Detokenize.
+         *
+         * @param text Input string.
+         * @return Translated string.
+         */
+        std::string translate(const std::string& text);
 
     private:
         struct Impl;
@@ -35,4 +77,3 @@ namespace xinfer::zoo::nlp {
     };
 
 } // namespace xinfer::zoo::nlp
-

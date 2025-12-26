@@ -1,155 +1,154 @@
-#include <include/zoo/generative/dcgan.h>
-#include <stdexcept>
-#include <vector>
-#include <fstream>
-#include <cuda_runtime_api.h>
-#include <curand.h>
-#include "NvInfer.h"
+#include <xinfer/zoo/generative/dcgan.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
+
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+// No heavy preproc/postproc needed, just math
+
 #include <iostream>
+#include <random>
 
-// Bring in the helper macros
-#define CHECK_CUDA(call) { \
-    const cudaError_t error = call; \
-    if (error != cudaSuccess) { \
-        throw std::runtime_error("CUDA Error: " + std::string(cudaGetErrorString(error))); \
-    } \
-}
+namespace xinfer::zoo::generative {
 
-#define CHECK_CURAND(call) { \
-    const curandStatus_t status = call; \
-    if (status != CURAND_STATUS_SUCCESS) { \
-        throw std::runtime_error("CURAND Error: " + std::to_string(status)); \
-    } \
-}
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
-// Logger for TensorRT
-class Logger : public nvinfer1::ILogger
-{
-    void log(Severity severity, const char* msg) noexcept override
-    {
-        if (severity <= Severity::kWARNING)
-            std::cout << msg << std::endl;
+struct DCGAN::Impl {
+    DcganConfig config_;
+
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+
+    // Data Containers
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
+
+    // Random Number Generator
+    std::mt19937 rng_;
+    std::normal_distribution<float> dist_;
+
+    Impl(const DcganConfig& config) : config_(config), dist_(0.0f, 1.0f) {
+        if (config.seed != -1) {
+            rng_.seed(config.seed);
+        } else {
+            std::random_device rd;
+            rng_.seed(rd());
+        }
+
+        initialize();
+    }
+
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
+
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("DCGAN: Failed to load model " + config_.model_path);
+        }
+    }
+
+    // --- Preprocessing: Generate Random Noise ---
+    void prepare_input(const std::vector<float>* custom_vector = nullptr) {
+        // Input Shape: [1, LatentDim]
+        input_tensor.resize({1, (int64_t)config_.latent_dim}, core::DataType::kFLOAT);
+        float* ptr = static_cast<float*>(input_tensor.data());
+
+        if (custom_vector) {
+            std::memcpy(ptr, custom_vector->data(), config_.latent_dim * sizeof(float));
+        } else {
+            for (int i = 0; i < config_.latent_dim; ++i) {
+                ptr[i] = dist_(rng_);
+            }
+        }
+    }
+
+    // --- Post-processing: Tensor -> Image ---
+    cv::Mat tensor_to_image() {
+        // Output Shape: [1, Channels, H, W]
+        auto shape = output_tensor.shape();
+        int c = (int)shape[1];
+        int h = (int)shape[2];
+        int w = (int)shape[3];
+        int spatial = h * w;
+
+        const float* data = static_cast<const float*>(output_tensor.data());
+
+        // Denormalize: Tanh output is [-1, 1], convert to [0, 255]
+        // val_uint8 = (val_float * 0.5 + 0.5) * 255
+        std::vector<cv::Mat> channels;
+        for (int i = 0; i < c; ++i) {
+            // Wrap channel plane (no copy)
+            cv::Mat float_chan(h, w, CV_32F, const_cast<float*>(data + i * spatial));
+
+            // Denormalize and convert to uint8
+            cv::Mat uint_chan;
+            float_chan.convertTo(uint_chan, CV_8U, 255.0 * 0.5, 255.0 * 0.5);
+            channels.push_back(uint_chan);
+        }
+
+        // Merge to BGR
+        cv::Mat final_image;
+        if (c == 3) {
+            // Swap RGB -> BGR
+            std::swap(channels[0], channels[2]);
+            cv::merge(channels, final_image);
+        } else if (c == 1) {
+            final_image = channels[0];
+        } else {
+            // Fallback for other channel counts
+            XINFER_LOG_WARN("DCGAN output has unexpected channel count: " + std::to_string(c));
+            return cv::Mat();
+        }
+
+        return final_image;
     }
 };
 
-namespace xinfer::zoo::generative
-{
-    // --- PIMPL Idiom Implementation ---
-    // All the complex state is hidden here.
-    struct DCGAN_Generator::Impl
-    {
-        Logger logger_;
-        std::unique_ptr<nvinfer1::IRuntime> runtime_;
-        std::unique_ptr<nvinfer1::ICudaEngine> engine_;
-        std::unique_ptr<nvinfer1::IExecutionContext> context_;
+// =================================================================================
+// Public API
+// =================================================================================
 
-        void* input_buffer_ = nullptr;
-        void* output_buffer_ = nullptr;
+DCGAN::DCGAN(const DcganConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
-        int noise_dim_;
-        std::vector<int64_t> output_shape_;
+DCGAN::~DCGAN() = default;
+DCGAN::DCGAN(DCGAN&&) noexcept = default;
+DCGAN& DCGAN::operator=(DCGAN&&) noexcept = default;
 
-        cudaStream_t stream_;
-        curandGenerator_t noise_generator_;
+cv::Mat DCGAN::generate() {
+    if (!pimpl_) throw std::runtime_error("DCGAN is null.");
 
-        Impl(const std::string& engine_path)
-        {
-            // 1. Load the TensorRT engine from file
-            std::ifstream file(engine_path, std::ios::binary | std::ios::ate);
-            if (!file) throw std::runtime_error("Could not open engine file: " + engine_path);
+    // 1. Prepare Input (Random Vector)
+    pimpl_->prepare_input();
 
-            std::streamsize size = file.tellg();
-            file.seekg(0, std::ios::beg);
-            std::vector<char> buffer(size);
-            if (!file.read(buffer.data(), size)) throw std::runtime_error("Could not read engine file.");
+    // 2. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-            runtime_.reset(nvinfer1::createInferRuntime(logger_));
-            engine_.reset(runtime_->deserializeCudaEngine(buffer.data(), size));
-            if (!engine_) throw std::runtime_error("Failed to deserialize TensorRT Engine.");
+    // 3. Postprocess
+    return pimpl_->tensor_to_image();
+}
 
-            context_.reset(engine_->createExecutionContext());
-            if (!context_) throw std::runtime_error("Failed to create TensorRT Execution Context.");
-
-            // 2. Allocate GPU buffers for input and output
-            auto input_dims = engine_->getBindingDimensions(0); // Assuming input is at binding 0
-            noise_dim_ = input_dims.d[1]; // Shape is [N, C, H, W], so C is noise_dim
-            size_t input_size = (size_t)engine_->getMaxBatchSize() * noise_dim_ * 1 * 1 * sizeof(float);
-            CHECK_CUDA(cudaMalloc(&input_buffer_, input_size));
-
-            auto output_dims = engine_->getBindingDimensions(1); // Assuming output is at binding 1
-            output_shape_ = {(int64_t)engine_->getMaxBatchSize(), output_dims.d[1], output_dims.d[2], output_dims.d[3]};
-            size_t output_size = (size_t)output_shape_[0] * output_shape_[1] * output_shape_[2] * output_shape_[3] *
-                sizeof(float);
-            CHECK_CUDA(cudaMalloc(&output_buffer_, output_size));
-
-            // 3. Initialize CUDA Stream and cuRAND Generator
-            CHECK_CUDA(cudaStreamCreate(&stream_));
-            CHECK_CURAND(curandCreateGenerator(&noise_generator_, CURAND_RNG_PSEUDO_DEFAULT));
-            CHECK_CURAND(curandSetPseudoRandomGeneratorSeed(noise_generator_, 1234ULL));
-        }
-
-        ~Impl()
-        {
-            cudaFree(input_buffer_);
-            cudaFree(output_buffer_);
-            curandDestroyGenerator(noise_generator_);
-            cudaStreamDestroy(stream_);
-            // Smart pointers handle the rest
-        }
-    };
-
-    // --- Public Class Method Implementations ---
-
-    DCGAN_Generator::DCGAN_Generator(const std::string& engine_path)
-        : pimpl_(new Impl(engine_path))
-    {
+cv::Mat DCGAN::generate_from_vector(const std::vector<float>& latent_vector) {
+    if (!pimpl_) throw std::runtime_error("DCGAN is null.");
+    if (latent_vector.size() != (size_t)pimpl_->config_.latent_dim) {
+        XINFER_LOG_ERROR("Latent vector size mismatch.");
+        return cv::Mat();
     }
 
-    DCGAN_Generator::~DCGAN_Generator() = default;
-    DCGAN_Generator::DCGAN_Generator(DCGAN_Generator&&) noexcept = default;
-    DCGAN_Generator& DCGAN_Generator::operator=(DCGAN_Generator&&) noexcept = default;
+    // 1. Prepare Input (User-provided Vector)
+    pimpl_->prepare_input(&latent_vector);
 
+    // 2. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-    core::Tensor DCGAN_Generator::generate(int batch_size)
-    {
-        if (!pimpl_)
-        {
-            throw std::runtime_error("DCGAN_Generator is in a moved-from state.");
-        }
-        if (batch_size > pimpl_->engine_->getMaxBatchSize())
-        {
-            throw std::invalid_argument("Requested batch size exceeds the max batch size of the engine.");
-        }
+    // 3. Postprocess
+    return pimpl_->tensor_to_image();
+}
 
-        // 1. Generate random noise directly on the GPU
-        CHECK_CURAND(curandGenerateNormal(pimpl_->noise_generator_,
-            (float*)pimpl_->input_buffer_,
-            (size_t)batch_size * pimpl_->noise_dim_,
-            0.0f, 1.0f));
-
-        // 2. Set up the bindings for this specific inference call
-        void* bindings[2] = {pimpl_->input_buffer_, pimpl_->output_buffer_};
-
-        // 3. Run inference asynchronously
-        pimpl_->context_->enqueueV2(bindings, pimpl_->stream_, nullptr);
-
-        // 4. Create an xInfer Tensor to return the result.
-        //    This is a "view" of the internal buffer; no data is copied here.
-        std::vector<int64_t> current_shape = {
-            (int64_t)batch_size, pimpl_->output_shape_[1], pimpl_->output_shape_[2], pimpl_->output_shape_[3]
-        };
-        core::Tensor result_tensor(current_shape, core::DataType::kFLOAT);
-
-        // 5. Copy the data from our internal buffer to the user's tensor buffer
-        CHECK_CUDA(cudaMemcpyAsync(result_tensor.data(),
-            pimpl_->output_buffer_,
-            result_tensor.size_bytes(),
-            cudaMemcpyDeviceToDevice,
-            pimpl_->stream_));
-
-        // 6. Wait for the operations to complete
-        CHECK_CUDA(cudaStreamSynchronize(pimpl_->stream_));
-
-        return result_tensor;
-    }
 } // namespace xinfer::zoo::generative

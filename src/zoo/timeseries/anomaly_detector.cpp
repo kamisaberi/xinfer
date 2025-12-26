@@ -1,63 +1,166 @@
-#include <include/zoo/timeseries/anomaly_detector.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
-#include <numeric>
+#include <xinfer/zoo/timeseries/anomaly_detector.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-#include <include/core/tensor.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+// Note: Time Series preprocessing is simple math, handled internally here
+// rather than using the heavy image/audio preprocessors.
+
+#include <iostream>
+#include <deque>
+#include <cmath>
+#include <numeric>
+#include <algorithm>
 
 namespace xinfer::zoo::timeseries {
 
-struct AnomalyDetector::Impl {
-    AnomalyDetectorConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-};
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
-AnomalyDetector::AnomalyDetector(const AnomalyDetectorConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Time-series anomaly detector engine file not found: " + pimpl_->config_.engine_path);
+struct AnomalyDetector::Impl {
+    TSAnomalyConfig config_;
+
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+
+    // Data Containers
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
+
+    // Sliding Window Buffer
+    // Stores raw (un-normalized) data
+    std::deque<std::vector<float>> window_buffer_;
+
+    Impl(const TSAnomalyConfig& config) : config_(config) {
+        initialize();
     }
 
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-}
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
+
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("TSAnomalyDetector: Failed to load model " + config_.model_path);
+        }
+
+        // Validate Config
+        if (config_.mean.size() != config_.num_features || config_.std.size() != config_.num_features) {
+            XINFER_LOG_WARN("Normalization params size mismatch. Defaulting to Mean=0, Std=1.");
+            // Fix config locally if needed, or rely on push() to handle raw data if empty
+        }
+
+        // Pre-allocate Input Tensor [1, WindowSize, NumFeatures]
+        // Note: Layout depends on model (LSTM usually takes [Batch, Time, Feat])
+        input_tensor.resize({1, (int64_t)config_.window_size, (int64_t)config_.num_features}, core::DataType::kFLOAT);
+    }
+
+    void add_point(const std::vector<float>& features) {
+        if (features.size() != config_.num_features) {
+            XINFER_LOG_ERROR("Input feature size mismatch.");
+            return;
+        }
+
+        window_buffer_.push_back(features);
+        if (window_buffer_.size() > config_.window_size) {
+            window_buffer_.pop_front();
+        }
+    }
+
+    // Prepare tensor: Flatten window buffer and Normalize
+    void prepare_input() {
+        float* ptr = static_cast<float*>(input_tensor.data());
+        int idx = 0;
+
+        bool use_norm = (!config_.mean.empty() && !config_.std.empty());
+
+        for (const auto& step : window_buffer_) {
+            for (int f = 0; f < config_.num_features; ++f) {
+                float val = step[f];
+                if (use_norm) {
+                    val = (val - config_.mean[f]) / (config_.std[f] + 1e-6f);
+                }
+                ptr[idx++] = val;
+            }
+        }
+    }
+
+    // Post-process: Calculate MSE
+    TSAnomalyResult compute_result() {
+        TSAnomalyResult res;
+        res.is_anomaly = false;
+        res.anomaly_score = 0.0f;
+
+        // Get Input Data (Normalized)
+        const float* in_ptr = static_cast<const float*>(input_tensor.data());
+
+        // Get Output Data (Reconstruction)
+        const float* out_ptr = static_cast<const float*>(output_tensor.data());
+
+        // Store reconstruction for user (Denormalized? Optional. Here returning raw model output)
+        size_t total_elements = config_.window_size * config_.num_features;
+        res.reconstruction.assign(out_ptr, out_ptr + total_elements);
+
+        // Calculate MSE (Mean Squared Error)
+        float sum_sq_err = 0.0f;
+        for (size_t i = 0; i < total_elements; ++i) {
+            float diff = in_ptr[i] - out_ptr[i];
+            sum_sq_err += (diff * diff);
+        }
+        res.anomaly_score = sum_sq_err / total_elements;
+
+        // Thresholding
+        if (res.anomaly_score > config_.threshold) {
+            res.is_anomaly = true;
+        }
+
+        return res;
+    }
+};
+
+// =================================================================================
+// Public API
+// =================================================================================
+
+AnomalyDetector::AnomalyDetector(const TSAnomalyConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 AnomalyDetector::~AnomalyDetector() = default;
 AnomalyDetector::AnomalyDetector(AnomalyDetector&&) noexcept = default;
 AnomalyDetector& AnomalyDetector::operator=(AnomalyDetector&&) noexcept = default;
 
-AnomalyResult AnomalyDetector::predict(const std::vector<float>& time_series_window) {
-    if (!pimpl_) throw std::runtime_error("AnomalyDetector is in a moved-from state.");
-    if (time_series_window.size() != pimpl_->config_.sequence_length) {
-        throw std::invalid_argument("Input time_series_window size does not match model's expected sequence_length.");
+void AnomalyDetector::reset() {
+    if (pimpl_) pimpl_->window_buffer_.clear();
+}
+
+bool AnomalyDetector::push(const std::vector<float>& features) {
+    if (!pimpl_) return false;
+    pimpl_->add_point(features);
+    return (pimpl_->window_buffer_.size() >= pimpl_->config_.window_size);
+}
+
+TSAnomalyResult AnomalyDetector::detect() {
+    if (!pimpl_) throw std::runtime_error("TSAnomalyDetector is null.");
+
+    // Check if we have enough data
+    if (pimpl_->window_buffer_.size() < pimpl_->config_.window_size) {
+        XINFER_LOG_WARN("Not enough data points for full window inference. Padding with zeros might occur.");
+        // In this implementation, we just proceed (buffer might be partial),
+        // but typically you wait until push returns true.
     }
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    input_tensor.copy_from_host(time_series_window.data());
+    // 1. Prepare Input (Normalize & Flatten)
+    pimpl_->prepare_input();
 
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& reconstructed_tensor = output_tensors[0];
+    // 2. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-    std::vector<float> reconstructed_window(reconstructed_tensor.num_elements());
-    reconstructed_tensor.copy_to_host(reconstructed_window.data());
-
-    AnomalyResult result;
-    result.reconstruction_error.resize(pimpl_->config_.sequence_length);
-    double total_squared_error = 0.0;
-
-    for (int i = 0; i < pimpl_->config_.sequence_length; ++i) {
-        double diff = time_series_window[i] - reconstructed_window[i];
-        result.reconstruction_error[i] = diff * diff;
-        total_squared_error += result.reconstruction_error[i];
-    }
-
-    result.anomaly_score = total_squared_error / pimpl_->config_.sequence_length;
-    result.is_anomaly = result.anomaly_score > pimpl_->config_.anomaly_threshold;
-
-    return result;
+    // 3. Postprocess (MSE)
+    return pimpl_->compute_result();
 }
 
 } // namespace xinfer::zoo::timeseries

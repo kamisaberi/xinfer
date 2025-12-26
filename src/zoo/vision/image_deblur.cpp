@@ -1,75 +1,152 @@
-#include <include/zoo/vision/image_deblur.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
+#include <xinfer/zoo/vision/image_deblur.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+// Postproc factory is not used here; image restoration requires
+// specific tensor-to-image reconstruction logic implemented below.
+
+#include <iostream>
+#include <algorithm>
+#include <chrono>
 
 namespace xinfer::zoo::vision {
 
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
+
 struct ImageDeblur::Impl {
     ImageDeblurConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_;
-};
 
-ImageDeblur::ImageDeblur(const ImageDeblurConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Image deblur engine file not found: " + pimpl_->config_.engine_path);
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> preproc_;
+
+    // Data Containers
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
+
+    Impl(const ImageDeblurConfig& config) : config_(config) {
+        initialize();
     }
 
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
 
-    pimpl_->preprocessor_ = std::make_unique<preproc::ImageProcessor>(
-        pimpl_->config_.input_width,
-        pimpl_->config_.input_height,
-        std::vector<float>{0.5f, 0.5f, 0.5f},
-        std::vector<float>{0.5f, 0.5f, 0.5f}
-    );
-}
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("ImageDeblur: Failed to load model " + config_.model_path);
+        }
+
+        // 2. Setup Preprocessor
+        preproc_ = preproc::create_image_preprocessor(config_.target);
+
+        preproc::ImagePreprocConfig pre_cfg;
+        pre_cfg.target_width = config_.input_width;
+        pre_cfg.target_height = config_.input_height;
+        pre_cfg.target_format = preproc::ImageFormat::RGB; // Models usually trained on RGB
+        pre_cfg.layout_nchw = true;
+
+        pre_cfg.norm_params.mean = config_.mean;
+        pre_cfg.norm_params.std = config_.std;
+        pre_cfg.norm_params.scale_factor = config_.scale_factor;
+
+        preproc_->init(pre_cfg);
+    }
+
+    // --- Custom Post-Processing: Tensor -> Image ---
+    cv::Mat tensor_to_image(const core::Tensor& tensor) {
+        auto shape = tensor.shape(); // Expect [1, 3, H, W]
+        if (shape.size() != 4) {
+            XINFER_LOG_ERROR("Deblur output shape mismatch. Expected 4 dims.");
+            return cv::Mat();
+        }
+
+        int c = (int)shape[1];
+        int h = (int)shape[2];
+        int w = (int)shape[3];
+        int spatial_size = h * w;
+
+        // Pointer to float data (on CPU)
+        // If data is on GPU, we assume core::Tensor handles sync/mapping access
+        const float* data = static_cast<const float*>(tensor.data());
+
+        // Create output Mat
+        cv::Mat result(h, w, CV_8UC3);
+        uint8_t* ptr = result.data;
+
+        // Perform NCHW (Planar) -> HWC (Packed) conversion + Denormalization
+        // Loop over pixels
+        for (int i = 0; i < spatial_size; ++i) {
+            // Read R, G, B planes
+            float r = data[0 * spatial_size + i];
+            float g = data[1 * spatial_size + i];
+            float b = data[2 * spatial_size + i];
+
+            // Clamp 0.0-1.0 -> 0-255
+            // Note: If model output is -1 to 1, math changes here.
+            // Assuming standard [0,1] output for restoration.
+            int ir = std::min(std::max(int(r * 255.0f), 0), 255);
+            int ig = std::min(std::max(int(g * 255.0f), 0), 255);
+            int ib = std::min(std::max(int(b * 255.0f), 0), 255);
+
+            // Write BGR (OpenCV standard)
+            ptr[i * 3 + 0] = (uint8_t)ib;
+            ptr[i * 3 + 1] = (uint8_t)ig;
+            ptr[i * 3 + 2] = (uint8_t)ir;
+        }
+
+        return result;
+    }
+};
+
+// =================================================================================
+// Public API
+// =================================================================================
+
+ImageDeblur::ImageDeblur(const ImageDeblurConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 ImageDeblur::~ImageDeblur() = default;
 ImageDeblur::ImageDeblur(ImageDeblur&&) noexcept = default;
 ImageDeblur& ImageDeblur::operator=(ImageDeblur&&) noexcept = default;
 
-cv::Mat ImageDeblur::predict(const cv::Mat& blurry_image) {
-    if (!pimpl_) throw std::runtime_error("ImageDeblur is in a moved-from state.");
+DeblurResult ImageDeblur::process(const cv::Mat& blurry_image) {
+    if (!pimpl_) throw std::runtime_error("ImageDeblur is null.");
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(blurry_image, input_tensor);
+    auto start = std::chrono::high_resolution_clock::now();
 
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& sharp_image_tensor = output_tensors[0];
+    // 1. Preprocess
+    preproc::ImageFrame frame;
+    frame.data = blurry_image.data;
+    frame.width = blurry_image.cols;
+    frame.height = blurry_image.rows;
+    frame.format = preproc::ImageFormat::BGR;
 
-    auto output_shape = sharp_image_tensor.shape();
-    const int C = output_shape[1];
-    const int H = output_shape[2];
-    const int W = output_shape[3];
+    pimpl_->preproc_->process(frame, pimpl_->input_tensor);
 
-    std::vector<float> h_output(sharp_image_tensor.num_elements());
-    sharp_image_tensor.copy_to_host(h_output.data());
+    // 2. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-    cv::Mat sharp_image_chw(H, W, CV_32FC3);
+    auto end = std::chrono::high_resolution_clock::now();
+    float time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
-    for (int c = 0; c < C; ++c) {
-        for (int y = 0; y < H; ++y) {
-            for (int x = 0; x < W; ++x) {
-                float val = h_output[c * H * W + y * W + x];
-                sharp_image_chw.at<cv::Vec3f>(y, x)[c] = val;
-            }
-        }
+    // 3. Postprocess (Reconstruct Image)
+    cv::Mat sharp = pimpl_->tensor_to_image(pimpl_->output_tensor);
+
+    // Optional: If model output size differs from input, resize back
+    if (sharp.cols != blurry_image.cols || sharp.rows != blurry_image.rows) {
+        cv::resize(sharp, sharp, blurry_image.size());
     }
 
-    cv::Mat sharp_image_bgr, final_image;
-    sharp_image_chw.convertTo(sharp_image_bgr, CV_8UC3, 255.0, -127.5);
-
-    cv::resize(sharp_image_bgr, final_image, blurry_image.size(), 0, 0, cv::INTER_CUBIC);
-
-    return final_image;
+    return {sharp, time_ms};
 }
 
 } // namespace xinfer::zoo::vision

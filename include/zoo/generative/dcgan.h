@@ -3,49 +3,59 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <include/core/tensor.h> // We use the core Tensor for output
+#include <opencv2/opencv.hpp>
+
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::generative {
 
-    /**
-     * @class DCGAN_Generator
-     * @brief A high-level, hyper-optimized pipeline for DCGAN image generation.
-     *
-     * This class loads a pre-built TensorRT engine for a DCGAN generator and
-     * provides a simple, one-line `generate()` function that handles noise
-     * creation and inference at maximum speed.
-     */
-    class DCGAN_Generator {
+    struct DcganConfig {
+        // Hardware Target (GANs are heavy, GPU preferred)
+        xinfer::Target target = xinfer::Target::NVIDIA_TRT;
+
+        // Model Path (e.g., dcgan_generator.engine)
+        // Expected Input: [Batch, LatentDim] (e.g., [1, 100])
+        // Expected Output: [Batch, Channels, H, W]
+        std::string model_path;
+
+        // Input Specs
+        int latent_dim = 100; // Size of the input noise vector
+
+        // Generation settings
+        int seed = -1; // -1 for random seed, or fixed for reproducible results
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
+    };
+
+    class DCGAN {
     public:
-        /**
-         * @brief Constructor for the DCGAN_Generator.
-         * @param engine_path Path to the pre-built, optimized TensorRT .engine file.
-         */
-        explicit DCGAN_Generator(const std::string& engine_path);
+        explicit DCGAN(const DcganConfig& config);
+        ~DCGAN();
 
-        ~DCGAN_Generator();
-
-        // Rule of Five for proper resource management with PIMPL
-        DCGAN_Generator(const DCGAN_Generator&) = delete;
-        DCGAN_Generator& operator=(const DCGAN_Generator&) = delete;
-        DCGAN_Generator(DCGAN_Generator&&) noexcept;
-        DCGAN_Generator& operator=(DCGAN_Generator&&) noexcept;
+        // Move semantics
+        DCGAN(DCGAN&&) noexcept;
+        DCGAN& operator=(DCGAN&&) noexcept;
+        DCGAN(const DCGAN&) = delete;
+        DCGAN& operator=(const DCGAN&) = delete;
 
         /**
-         * @brief Generates a batch of images from random noise.
-         * @param batch_size The number of images to generate. Must be less than or
-         *                   equal to the max batch size the engine was built with.
-         * @return A core::Tensor on the GPU containing the batch of generated images.
-         *         The tensor will have a shape like [batch_size, 3, 64, 64].
+         * @brief Generate a new image from a random seed.
+         *
+         * @return Synthesized image (BGR, uint8).
          */
-        core::Tensor generate(int batch_size = 1);
+        cv::Mat generate();
+
+        /**
+         * @brief Generate an image from a specific latent vector.
+         * Useful for latent space interpolation.
+         */
+        cv::Mat generate_from_vector(const std::vector<float>& latent_vector);
 
     private:
-        // PIMPL (Pointer to Implementation) idiom to hide all the complex
-        // CUDA and TensorRT headers from this public interface.
         struct Impl;
         std::unique_ptr<Impl> pimpl_;
     };
 
 } // namespace xinfer::zoo::generative
-

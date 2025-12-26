@@ -5,37 +5,74 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 
-namespace xinfer::core { class Tensor; }
-namespace xinfer::preproc { class ImageProcessor; }
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
+#include <xinfer/postproc/vision/types.h> // For BoundingBox
 
 namespace xinfer::zoo::vision {
 
-    struct DetectionEvent {
-        enum class Type { NONE, SMOKE, FLAME };
-        Type type = Type::NONE;
-        float confidence = 0.0f;
-        cv::Rect bounding_box;
+    enum class HazardType {
+        FIRE = 0,
+        SMOKE = 1,
+        UNKNOWN = 2
     };
 
-    struct SmokeFlameDetectorConfig {
-        std::string engine_path;
-        float confidence_threshold = 0.6f;
-        float nms_iou_threshold = 0.4f;
+    struct HazardResult {
+        HazardType type;
+        float confidence;
+        postproc::BoundingBox box;
+    };
+
+    struct SmokeFlameConfig {
+        // Hardware Target
+        xinfer::Target target = xinfer::Target::INTEL_OV;
+
+        // Model Path (e.g., yolov8n_fire_smoke.rknn)
+        std::string model_path;
+
+        // Input Specs
         int input_width = 640;
         int input_height = 640;
+
+        // Sensitivity Settings
+        // Fire detection needs high recall, so defaults are often lower than generic detection.
+        float fire_thresh = 0.35f;
+        float smoke_thresh = 0.35f;
+        float nms_threshold = 0.45f;
+
+        // Class Mapping (Model specific)
+        // Which class ID corresponds to Fire/Smoke in the model?
+        int class_id_fire = 0;
+        int class_id_smoke = 1;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class SmokeFlameDetector {
     public:
-        explicit SmokeFlameDetector(const SmokeFlameDetectorConfig& config);
+        explicit SmokeFlameDetector(const SmokeFlameConfig& config);
         ~SmokeFlameDetector();
 
-        SmokeFlameDetector(const SmokeFlameDetector&) = delete;
-        SmokeFlameDetector& operator=(const SmokeFlameDetector&) = delete;
+        // Move semantics
         SmokeFlameDetector(SmokeFlameDetector&&) noexcept;
         SmokeFlameDetector& operator=(SmokeFlameDetector&&) noexcept;
+        SmokeFlameDetector(const SmokeFlameDetector&) = delete;
+        SmokeFlameDetector& operator=(const SmokeFlameDetector&) = delete;
 
-        std::vector<DetectionEvent> predict(const cv::Mat& image);
+        /**
+         * @brief Detect fire and smoke in an image.
+         *
+         * @param image Input frame.
+         * @return List of detected hazards.
+         */
+        std::vector<HazardResult> detect(const cv::Mat& image);
+
+        /**
+         * @brief Utility: Draw alerts on image.
+         * Draws Red boxes for Fire, Grey boxes for Smoke.
+         */
+        static void draw_alerts(cv::Mat& image, const std::vector<HazardResult>& results);
 
     private:
         struct Impl;
@@ -43,4 +80,3 @@ namespace xinfer::zoo::vision {
     };
 
 } // namespace xinfer::zoo::vision
-

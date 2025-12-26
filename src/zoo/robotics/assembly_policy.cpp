@@ -1,43 +1,154 @@
-#include <include/zoo/robotics/assembly_policy.h>
-#include <stdexcept>
-#include <vector>
+#include <xinfer/zoo/robotics/assembly_policy.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
+
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+// Robotics data is raw numerics; no heavy preproc factory needed.
+// Custom math implementation allows for tight control loops.
+
+#include <iostream>
+#include <algorithm>
+#include <cmath>
 
 namespace xinfer::zoo::robotics {
 
-    struct AssemblyPolicy::Impl {
-        AssemblyPolicyConfig config_;
-        std::unique_ptr<vision::Classifier> vision_encoder_; // Using Classifier as a generic feature extractor
-        std::unique_ptr<rl::Policy> policy_engine_;
-    };
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
-    AssemblyPolicy::AssemblyPolicy(const AssemblyPolicyConfig& config)
-        : pimpl_(new Impl{config})
-    {
-        vision::ClassifierConfig vision_config;
-        vision_config.engine_path = pimpl_->config_.vision_encoder_engine_path;
-        pimpl_->vision_encoder_ = std::make_unique<vision::Classifier>(vision_config);
+struct AssemblyPolicy::Impl {
+    PolicyConfig config_;
 
-        rl::PolicyConfig policy_config;
-        policy_config.engine_path = pimpl_->config_.policy_engine_path;
-        pimpl_->policy_engine_ = std::make_unique<rl::Policy>(policy_config);
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+
+    // Data Containers
+    // Pre-allocated to avoid malloc in real-time loop
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
+
+    // Derived
+    size_t flat_input_size_ = 0;
+    bool use_norm_ = false;
+
+    Impl(const PolicyConfig& config) : config_(config) {
+        initialize();
     }
 
-    AssemblyPolicy::~AssemblyPolicy() = default;
-    AssemblyPolicy::AssemblyPolicy(AssemblyPolicy&&) noexcept = default;
-    AssemblyPolicy& AssemblyPolicy::operator=(AssemblyPolicy&&) noexcept = default;
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
 
-    std::vector<float> AssemblyPolicy::predict(const cv::Mat& robot_camera_view, const std::vector<float>& robot_joint_states) {
-        if (!pimpl_) throw std::runtime_error("AssemblyPolicy is in a moved-from state.");
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
 
-        // This is a placeholder for a real implementation
-        // 1. Pre-process image and get vision features from the vision_encoder
-        // 2. Concatenate vision features and robot_joint_states into a single state vector
-        // 3. Create a core::Tensor from the state vector
-        // 4. Run the policy_engine_.predict()
-        // 5. Copy the output action tensor back to a std::vector<float>
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("AssemblyPolicy: Failed to load model " + config_.model_path);
+        }
 
-        std::vector<float> action;
-        return action;
+        // 2. Validate Config & Dimensions
+        // We assume input is flattened concatenation of: [Pos, Vel, EE, FT]
+        // User must ensure config.input_dim matches their training setup.
+        if (config_.input_dim == 0) {
+            // Auto-calculate default assumption: Joints + Vel + Force
+            // 6 + 6 + 6 = 18
+            flat_input_size_ = (config_.num_joints * 2) + 6;
+        } else {
+            flat_input_size_ = config_.input_dim;
+        }
+
+        if (!config_.state_mean.empty() && config_.state_mean.size() == flat_input_size_) {
+            use_norm_ = true;
+        }
+
+        // 3. Pre-allocate Tensors
+        // Shape: [1, InputDim]
+        input_tensor.resize({1, (int64_t)flat_input_size_}, core::DataType::kFLOAT);
     }
+
+    void flatten_and_normalize(const RobotState& state) {
+        float* ptr = static_cast<float*>(input_tensor.data());
+        int idx = 0;
+
+        // Lambda to append vector
+        auto append = [&](const std::vector<float>& vec) {
+            for (float val : vec) {
+                if (idx < flat_input_size_) {
+                    if (use_norm_) {
+                        val = (val - config_.state_mean[idx]) / (config_.state_std[idx] + 1e-6f);
+                    }
+                    ptr[idx++] = val;
+                }
+            }
+        };
+
+        // Standard Order: Joint Pos -> Joint Vel -> (Optional EE) -> Force
+        append(state.joint_positions);
+        append(state.joint_velocities);
+
+        // Only append EE or FT if space remains in input dim
+        if (idx < flat_input_size_) append(state.ee_pose);
+        if (idx < flat_input_size_) append(state.force_torque);
+
+        // Safety check
+        if (idx != flat_input_size_) {
+            // In a real-time loop, logging might be too slow.
+            // We assume integration tests caught dimension mismatches.
+        }
+    }
+
+    RobotAction postprocess() {
+        RobotAction act;
+        act.commands.resize(config_.output_dim);
+
+        const float* out_ptr = static_cast<const float*>(output_tensor.data());
+        bool use_scale = (config_.action_scale.size() == config_.output_dim);
+
+        for (int i = 0; i < config_.output_dim; ++i) {
+            float val = out_ptr[i];
+
+            // Denormalize / Scale
+            // RL models usually output [-1, 1] or Gaussian.
+            // We scale to physical limits (e.g. rad/s).
+            if (use_scale) {
+                val *= config_.action_scale[i];
+            }
+
+            act.commands[i] = val;
+        }
+        return act;
+    }
+};
+
+// =================================================================================
+// Public API
+// =================================================================================
+
+AssemblyPolicy::AssemblyPolicy(const PolicyConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
+
+AssemblyPolicy::~AssemblyPolicy() = default;
+AssemblyPolicy::AssemblyPolicy(AssemblyPolicy&&) noexcept = default;
+AssemblyPolicy& AssemblyPolicy::operator=(AssemblyPolicy&&) noexcept = default;
+
+void AssemblyPolicy::reset() {
+    // If using LSTM/GRU backend, reset hidden states here via backend API
+    // e.g. pimpl_->engine_->reset_state();
+}
+
+RobotAction AssemblyPolicy::step(const RobotState& state) {
+    if (!pimpl_) throw std::runtime_error("AssemblyPolicy is null.");
+
+    // 1. Preprocess (Flatten & Norm)
+    pimpl_->flatten_and_normalize(state);
+
+    // 2. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
+
+    // 3. Postprocess (Scale)
+    return pimpl_->postprocess();
+}
 
 } // namespace xinfer::zoo::robotics

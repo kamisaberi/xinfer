@@ -1,80 +1,111 @@
-#include <include/zoo/geospatial/road_extractor.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
-#include <cmath>
+#include <xinfer/zoo/geospatial/road_extractor.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
+// --- We reuse the Segmenter Zoo module for the core AI logic ---
+#include <xinfer/zoo/vision/segmenter.h>
+
+#include <iostream>
+#include <numeric>
 
 namespace xinfer::zoo::geospatial {
 
-struct RoadExtractor::Impl {
-    RoadExtractorConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_;
-};
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
-RoadExtractor::RoadExtractor(const RoadExtractorConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Road extractor engine file not found: " + pimpl_->config_.engine_path);
+struct RoadExtractor::Impl {
+    RoadConfig config_;
+
+    // High-level Zoo module for segmentation
+    std::unique_ptr<vision::Segmenter> segmenter_;
+
+    Impl(const RoadConfig& config) : config_(config) {
+        initialize();
     }
 
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
+    void initialize() {
+        // 1. Initialize the Segmenter
+        vision::SegmenterConfig seg_cfg;
+        seg_cfg.target = config_.target;
+        seg_cfg.model_path = config_.model_path;
+        seg_cfg.input_width = config_.input_width;
+        seg_cfg.input_height = config_.input_height;
+        seg_cfg.vendor_params = config_.vendor_params;
 
-    pimpl_->preprocessor_ = std::make_unique<preproc::ImageProcessor>(
-        pimpl_->config_.input_width,
-        pimpl_->config_.input_height,
-        std::vector<float>{0.485f, 0.456f, 0.406f},
-        std::vector<float>{0.229f, 0.224f, 0.225f}
-    );
-}
+        segmenter_ = std::make_unique<vision::Segmenter>(seg_cfg);
+    }
+
+    // --- Core Logic: Find Lane Centerline ---
+    void find_centerline(const cv::Mat& mask, RoadResult& result) {
+        // Iterate over horizontal slices of the mask from bottom to top
+        for (int y = mask.rows - 1; y > mask.rows * 0.5; y -= 10) { // Scan bottom half
+
+            // Find start and end of road segment on this row
+            const uint8_t* row = mask.ptr<uint8_t>(y);
+            int first = -1, last = -1;
+
+            for (int x = 0; x < mask.cols; ++x) {
+                if (row[x] > 0) {
+                    if (first == -1) first = x;
+                    last = x;
+                }
+            }
+
+            // If a valid road segment is found, add its center to the path
+            if (first != -1 && (last - first) > 10) { // Min width
+                result.lane_centerline.emplace_back((float)(first + last) / 2.0f, (float)y);
+            }
+        }
+    }
+};
+
+// =================================================================================
+// Public API
+// =================================================================================
+
+RoadExtractor::RoadExtractor(const RoadConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 RoadExtractor::~RoadExtractor() = default;
 RoadExtractor::RoadExtractor(RoadExtractor&&) noexcept = default;
 RoadExtractor& RoadExtractor::operator=(RoadExtractor&&) noexcept = default;
 
-cv::Mat RoadExtractor::predict_mask(const cv::Mat& satellite_image) {
-    if (!pimpl_) throw std::runtime_error("RoadExtractor is in a moved-from state.");
+RoadResult RoadExtractor::extract(const cv::Mat& image) {
+    if (!pimpl_) throw std::runtime_error("RoadExtractor is null.");
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(satellite_image, input_tensor);
+    // 1. Run Segmentation
+    auto seg_res = pimpl_->segmenter_->segment(image);
 
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& logit_map_tensor = output_tensors[0];
+    // 2. Extract Road Mask
+    // Seg res contains a class mask. We need to isolate the "Road" class.
+    cv::Mat road_mask;
+    cv::inRange(seg_res.mask, cv::Scalar(pimpl_->config_.road_class_id),
+                cv::Scalar(pimpl_->config_.road_class_id), road_mask);
 
-    auto output_shape = logit_map_tensor.shape();
-    const int H = output_shape[2];
-    const int W = output_shape[3];
+    RoadResult result;
+    result.road_mask = road_mask;
 
-    std::vector<float> logits(logit_map_tensor.num_elements());
-    logit_map_tensor.copy_to_host(logits.data());
+    // 3. Quantification
+    float road_pixels = cv::countNonZero(road_mask);
+    result.drivable_area_sqm = road_pixels * pimpl_->config_.sq_meters_per_pixel;
 
-    cv::Mat probability_map(H, W, CV_32F, logits.data());
+    // 4. Find Path
+    pimpl_->find_centerline(road_mask, result);
 
-    cv::exp(-probability_map, probability_map);
-    probability_map = 1.0 / (1.0 + probability_map);
+    // 5. Visualization
+    // Blend original image with a colored road mask
+    cv::Mat color_layer = cv::Mat::zeros(image.size(), CV_8UC3);
+    color_layer.setTo(cv::Scalar(0, 255, 0), road_mask); // Green for road
+    cv::addWeighted(image, 1.0, color_layer, 0.3, 0.0, result.overlay);
 
-    cv::Mat binary_mask;
-    cv::threshold(probability_map, binary_mask, pimpl_->config_.probability_threshold, 255, cv::THRESH_BINARY);
-    binary_mask.convertTo(binary_mask, CV_8UC1);
+    // Draw centerline
+    for (size_t i = 1; i < result.lane_centerline.size(); ++i) {
+        cv::line(result.overlay, result.lane_centerline[i-1], result.lane_centerline[i],
+                 cv::Scalar(255, 255, 0), 2);
+    }
 
-    cv::Mat final_mask;
-    cv::resize(binary_mask, final_mask, satellite_image.size(), 0, 0, cv::INTER_NEAREST);
-
-    return final_mask;
-}
-
-std::vector<RoadSegment> RoadExtractor::predict_segments(const cv::Mat& satellite_image) {
-    cv::Mat mask = predict_mask(satellite_image);
-
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(mask, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
-
-    return contours;
+    return result;
 }
 
 } // namespace xinfer::zoo::geospatial

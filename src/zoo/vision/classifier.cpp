@@ -1,154 +1,151 @@
-#include <include/zoo/vision/classifier.h>
-#include <stdexcept>
+#include <xinfer/zoo/vision/classifier.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
+
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+#include <xinfer/postproc/factory.h>
+
 #include <fstream>
-#include <numeric>
-#include <algorithm>
-#include <functional>
+#include <iostream>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
+namespace xinfer::zoo::vision {
 
-#include <include/hub/downloader.h>
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
-namespace xinfer::zoo::vision
-{
-    // --- PIMPL Idiom Implementation ---
-    // The private implementation now only contains what it needs to RUN the model.
-    struct ImageClassifier::Impl
-    {
-        ClassifierConfig config_;
-        std::unique_ptr<core::InferenceEngine> engine_;
-        std::unique_ptr<preproc::ImageProcessor> preprocessor_;
-        std::vector<std::string> class_labels_;
+struct ImageClassifier::Impl {
+    ClassifierConfig config_;
 
-        // The post-processing logic is a perfect fit for a private helper method.
-        std::vector<ClassificationResult> postprocess(const core::Tensor& logits_tensor, int top_k);
-    };
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> preproc_;
+    std::unique_ptr<postproc::IClassificationPostprocessor> postproc_;
 
-    // --- Constructor Implementation ---
-    ImageClassifier::ImageClassifier(const ClassifierConfig& config)
-        : pimpl_(new Impl{config})
-    {
-        // Check if the engine file exists
-        std::ifstream f(pimpl_->config_.engine_path.c_str());
-        if (!f.good())
-        {
-            throw std::runtime_error("TensorRT engine file not found: " + pimpl_->config_.engine_path +
-                "\nPlease build the engine first using xinfer-cli or xinfer::builders::EngineBuilder.");
+    // Data Containers
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
+    std::vector<std::string> labels_;
+
+    Impl(const ClassifierConfig& config) : config_(config) {
+        initialize();
+    }
+
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
+
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("ImageClassifier: Failed to load model " + config_.model_path);
         }
 
-        // 1. Load the pre-built, optimized engine. This is fast.
-        pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
+        // 2. Setup Preprocessor
+        preproc_ = preproc::create_image_preprocessor(config_.target);
 
-        // 2. Initialize the pre-processor with the specified parameters.
-        pimpl_->preprocessor_ = std::make_unique<preproc::ImageProcessor>(
-            pimpl_->config_.input_width,
-            pimpl_->config_.input_height,
-            pimpl_->config_.mean,
-            pimpl_->config_.std
-        );
+        preproc::ImagePreprocConfig pre_cfg;
+        pre_cfg.target_width = config_.input_width;
+        pre_cfg.target_height = config_.input_height;
+        pre_cfg.target_format = preproc::ImageFormat::RGB;
+        pre_cfg.layout_nchw = true;
 
-        // 3. Load class labels if a path is provided.
-        if (!pimpl_->config_.labels_path.empty())
-        {
-            std::ifstream labels_file(pimpl_->config_.labels_path);
-            if (!labels_file)
-            {
-                throw std::runtime_error("Could not open labels file: " + pimpl_->config_.labels_path);
-            }
-            std::string line;
-            while (std::getline(labels_file, line))
-            {
-                pimpl_->class_labels_.push_back(line);
-            }
+        // Configure Normalization (Crucial for Classification accuracy)
+        pre_cfg.norm_params.mean = config_.mean;
+        pre_cfg.norm_params.std = config_.std;
+        // If user provided 0-255 mean values, we usually use scale=1.0.
+        // If user wants 0-1 range first, they might set scale=1/255.
+        // Here we assume standard ImageNet approach.
+        pre_cfg.norm_params.scale_factor = 1.0f;
+
+        preproc_->init(pre_cfg);
+
+        // 3. Setup Post-processing
+        postproc_ = postproc::create_classification(config_.target);
+
+        postproc::ClassificationConfig post_cfg;
+        post_cfg.top_k = config_.top_k;
+        post_cfg.apply_softmax = config_.apply_softmax;
+        postproc_->init(post_cfg);
+
+        // 4. Load Labels
+        if (!config_.labels_path.empty()) {
+            load_labels(config_.labels_path);
         }
     }
 
-    // Destructor and Move semantics must be defined after Impl is fully defined.
-    ImageClassifier::~ImageClassifier() = default;
-    ImageClassifier::ImageClassifier(ImageClassifier&&) noexcept = default;
-
-
-    ImageClassifier::ImageClassifier(const std::string& model_id, const xinfer::hub::HardwareTarget& target)
-    {
-        // 1. Download the engine file from your cloud hub
-        std::string engine_path = xinfer::hub::download_engine(model_id, target);
-
-        // 2. Download the associated labels file
-        // std::string labels_path = xinfer::hub::download_asset(model_id, "labels.txt");
-
-        // 3. Initialize the classifier with the downloaded assets
-        // This calls the other constructor that takes a config struct.
-        // *this = ImageClassifier(ClassifierConfig{engine_path, labels_path});
-        // A better way is to have a common private init function.
-        pimpl_ = std::make_unique<Impl>(ClassifierConfig{engine_path, "path/to/labels"});
-        // ... The rest of the initialization logic ...
+    void load_labels(const std::string& path) {
+        std::ifstream file(path);
+        if (!file.is_open()) {
+            XINFER_LOG_WARN("Could not open labels file: " + path);
+            return;
+        }
+        std::string line;
+        while (std::getline(file, line)) {
+            // Trim CR/LF
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            labels_.push_back(line);
+        }
     }
+};
 
-    ImageClassifier& ImageClassifier::operator=(ImageClassifier&&) noexcept = default;
+// =================================================================================
+// Public API
+// =================================================================================
 
-    // --- Public Method Implementation ---
-    std::vector<ClassificationResult> ImageClassifier::predict(const cv::Mat& image, int top_k)
-    {
-        if (!pimpl_ || !pimpl_->engine_ || !pimpl_->preprocessor_)
-        {
-            throw std::runtime_error("Classifier is not initialized or has been moved.");
+ImageClassifier::ImageClassifier(const ClassifierConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
+
+ImageClassifier::~ImageClassifier() = default;
+ImageClassifier::ImageClassifier(ImageClassifier&&) noexcept = default;
+ImageClassifier& ImageClassifier::operator=(ImageClassifier&&) noexcept = default;
+
+std::vector<ClassificationResult> ImageClassifier::classify(const cv::Mat& image) {
+    if (!pimpl_) throw std::runtime_error("ImageClassifier is null.");
+
+    // --- 1. Preprocess ---
+    preproc::ImageFrame frame;
+    frame.data = image.data;
+    frame.width = image.cols;
+    frame.height = image.rows;
+    frame.format = preproc::ImageFormat::BGR; // OpenCV default
+
+    pimpl_->preproc_->process(frame, pimpl_->input_tensor);
+
+    // --- 2. Inference ---
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
+
+    // --- 3. Postprocess (Softmax + TopK) ---
+    // Returns batch of results, we take index 0
+    auto raw_results = pimpl_->postproc_->process(pimpl_->output_tensor);
+
+    if (raw_results.empty()) return {};
+    auto& top_k_raw = raw_results[0];
+
+    // --- 4. Format Output ---
+    std::vector<ClassificationResult> final_results;
+    final_results.reserve(top_k_raw.size());
+
+    for (const auto& res : top_k_raw) {
+        ClassificationResult r;
+        r.id = res.id;
+        r.confidence = res.score;
+
+        // Map ID to Label String
+        if (res.id >= 0 && res.id < (int)pimpl_->labels_.size()) {
+            r.label = pimpl_->labels_[res.id];
+        } else {
+            r.label = "Class " + std::to_string(res.id);
         }
 
-        // 1. Create a GPU tensor to hold the pre-processed input image
-        auto input_shape = pimpl_->engine_->get_input_shape(0); // Get shape from the engine
-        core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-
-        // 2. Pre-process the image using the fused CUDA kernel
-        pimpl_->preprocessor_->process(image, input_tensor);
-
-        // 3. Run inference using the TensorRT engine
-        // The engine's infer method returns a vector of output tensors.
-        // For classification, we only expect one.
-        auto output_tensors = pimpl_->engine_->infer({input_tensor});
-
-        // 4. Post-process the raw output logits
-        return pimpl_->postprocess(output_tensors[0], top_k);
+        final_results.push_back(r);
     }
 
-    // --- Post-processing Implementation ---
-    std::vector<ClassificationResult> ImageClassifier::Impl::postprocess(const core::Tensor& logits_tensor, int top_k)
-    {
-        // 1. Copy the raw logits from GPU to a CPU vector
-        std::vector<float> logits(logits_tensor.num_elements());
-        logits_tensor.copy_to_host(logits.data());
+    return final_results;
+}
 
-        // 2. Find the top_k results by sorting indices
-        std::vector<int> indices(logits.size());
-        std::iota(indices.begin(), indices.end(), 0); // Fill with 0, 1, 2, ...
-
-        // Sort the indices based on the corresponding logit values in descending order
-        std::partial_sort(indices.begin(), indices.begin() + top_k, indices.end(),
-                          [&](int a, int b) { return logits[a] > logits[b]; });
-
-        // 3. Apply Softmax only to the top_k values for efficiency
-        float max_logit = logits[indices[0]];
-        float sum_exp = 0.0f;
-        std::vector<float> top_k_probs;
-        for (int i = 0; i < top_k; ++i)
-        {
-            float prob = std::exp(logits[indices[i]] - max_logit);
-            top_k_probs.push_back(prob);
-            sum_exp += prob;
-        }
-
-        // 4. Populate the result vector
-        std::vector<ClassificationResult> results;
-        for (int i = 0; i < top_k; ++i)
-        {
-            int class_id = indices[i];
-            float confidence = top_k_probs[i] / sum_exp;
-            std::string label = class_labels_.empty() || class_id >= class_labels_.size()
-                                    ? "Class " + std::to_string(class_id)
-                                    : class_labels_[class_id];
-            results.push_back({class_id, confidence, label});
-        }
-
-        return results;
-    }
 } // namespace xinfer::zoo::vision

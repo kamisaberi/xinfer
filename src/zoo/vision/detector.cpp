@@ -1,101 +1,161 @@
-// src/zoo/vision/detector.cpp
+#include <xinfer/zoo/vision/detector.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/zoo/vision/detector.h>
-#include <stdexcept>
+// --- The Three Pillars of xInfer ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+#include <xinfer/postproc/factory.h>
+
 #include <fstream>
-#include <vector>
-#include <numeric>
-
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
-#include <include/postproc/detection.h>
-#include <include/postproc/yolo_decoder.h> // Include your new decoder
+#include <iostream>
 
 namespace xinfer::zoo::vision {
 
-// Maximum number of boxes to consider after the decode step
-// This affects how large we size our intermediate GPU buffers.
-const int MAX_DECODED_BOXES = 4096;
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
 struct ObjectDetector::Impl {
     DetectorConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_;
+
+    // Abstract Interfaces (Polymorphic)
+    std::unique_ptr<backends::IBackend> engine_;
+    std::unique_ptr<preproc::IImagePreprocessor> preprocessor_;
+    std::unique_ptr<postproc::IDetectionPostprocessor> postprocessor_;
+
+    // Reusable Tensors (avoid allocation loop)
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
+
+    // Helper data
     std::vector<std::string> class_labels_;
 
-    // Intermediate GPU buffers for the post-processing pipeline
-    core::Tensor decoded_boxes_gpu;
-    core::Tensor decoded_scores_gpu;
-    core::Tensor decoded_classes_gpu;
-
-    // Host-side buffers for the final results after NMS
-    std::vector<float> h_boxes;
-    std::vector<float> h_scores;
-    std::vector<int> h_classes;
-
     Impl(const DetectorConfig& config) : config_(config) {
-        // Pre-allocate the intermediate buffers once during initialization
-        decoded_boxes_gpu = core::Tensor({MAX_DECODED_BOXES, 4}, core::DataType::kFLOAT);
-        decoded_scores_gpu = core::Tensor({MAX_DECODED_BOXES}, core::DataType::kFLOAT);
-        decoded_classes_gpu = core::Tensor({MAX_DECODED_BOXES}, core::DataType::kINT32);
+        initialize();
+    }
 
-        h_boxes.resize(MAX_DECODED_BOXES * 4);
-        h_scores.resize(MAX_DECODED_BOXES);
-        h_classes.resize(MAX_DECODED_BOXES);
+    void initialize() {
+        // 1. Initialize Runtime Backend
+        // ---------------------------------------------------------
+        engine_ = backends::BackendFactory::create(config_.target);
+
+        // Pass vendor params (e.g. "DLA=0" for Jetson, "CORE=ALL" for Rockchip)
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
+
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("Failed to load model: " + config_.model_path);
+        }
+
+        // 2. Initialize Preprocessor
+        // ---------------------------------------------------------
+        // The factory automatically picks CUDA for NVIDIA, RGA for Rockchip, etc.
+        preprocessor_ = preproc::create_image_preprocessor(config_.target);
+
+        preproc::ImagePreprocConfig pre_cfg;
+        pre_cfg.target_width = config_.input_width;
+        pre_cfg.target_height = config_.input_height;
+        pre_cfg.target_format = preproc::ImageFormat::RGB;
+        // Most models expect NCHW. TFLite/Rockchip sometimes expect NHWC.
+        // We assume NCHW standard here, or check target type.
+        pre_cfg.layout_nchw = true;
+
+        preprocessor_->init(pre_cfg);
+
+        // 3. Initialize Postprocessor
+        // ---------------------------------------------------------
+        // The factory picks CUDA for NVIDIA, CPU (AVX/NEON) for others.
+        postprocessor_ = postproc::create_detection(config_.target);
+
+        postproc::DetectionConfig post_cfg;
+        post_cfg.conf_threshold = config_.confidence_threshold;
+        post_cfg.nms_threshold = config_.nms_iou_threshold;
+        postprocessor_->init(post_cfg);
+
+        // 4. Load Labels
+        // ---------------------------------------------------------
+        if (!config_.labels_path.empty()) {
+            load_labels(config_.labels_path);
+        }
+    }
+
+    void load_labels(const std::string& path) {
+        std::ifstream file(path);
+        if (!file.is_open()) {
+            XINFER_LOG_WARN("Could not open labels file: " + path);
+            return;
+        }
+        std::string line;
+        while (std::getline(file, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            class_labels_.push_back(line);
+        }
     }
 };
 
-ObjectDetector::ObjectDetector(const DetectorConfig& config) : pimpl_(new Impl(config)) {
-    // ... (Constructor logic to load engine, preprocessor, labels is the same) ...
-}
-// ... (Destructor and move semantics are the same) ...
+// =================================================================================
+// Public API
+// =================================================================================
+
+ObjectDetector::ObjectDetector(const DetectorConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
+
+ObjectDetector::~ObjectDetector() = default;
+ObjectDetector::ObjectDetector(ObjectDetector&&) noexcept = default;
+ObjectDetector& ObjectDetector::operator=(ObjectDetector&&) noexcept = default;
 
 std::vector<BoundingBox> ObjectDetector::predict(const cv::Mat& image) {
-    if (!pimpl_) throw std::runtime_error("ObjectDetector is in a moved-from state.");
+    if (!pimpl_) throw std::runtime_error("ObjectDetector is null.");
 
-    // --- STEP 1: Pre-process ---
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(image, input_tensor);
+    // --- STEP 1: Abstraction Layer - Preprocessing ---
+    // This call might run on CPU (NEON), GPU (CUDA), or Hardware 2D (RGA)
+    // It handles resizing, normalization, and memory layout automatically.
+    preproc::ImageFrame frame;
+    frame.data = image.data;
+    frame.width = image.cols;
+    frame.height = image.rows;
+    frame.format = preproc::ImageFormat::BGR; // OpenCV default
 
-    // --- STEP 2: Inference ---
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& raw_output = output_tensors[0];
+    // Process writes directly to pimpl_->input_tensor
+    pimpl_->preprocessor_->process(frame, pimpl_->input_tensor);
 
-    // --- STEP 3: Decode on GPU ---
-    postproc::yolo::decode(raw_output, pimpl_->config_.confidence_threshold,
-                           pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->decoded_classes_gpu);
+    // --- STEP 2: Abstraction Layer - Inference ---
+    // Runs on TRT, OpenVINO, RKNN, QNN, etc.
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-    // --- STEP 4: Non-Maximum Suppression on GPU ---
-    // The NMS function returns a small vector of indices of the winning boxes.
-    std::vector<int> final_indices = postproc::detection::nms(
-        pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu,
-        pimpl_->config_.nms_iou_threshold);
+    // --- STEP 3: Abstraction Layer - Postprocessing ---
+    // If NVIDIA: Decodes & NMS on GPU, copies small result list to CPU.
+    // If Rockchip: Decodes & NMS on CPU using optimized NEON/OpenCV.
+    auto raw_results = pimpl_->postprocessor_->process({pimpl_->output_tensor});
 
-    // --- STEP 5: Copy final results to CPU and format ---
+    // --- STEP 4: Coordinate Mapping & Labeling ---
+    // Map the boxes (0..640) back to original image size (e.g. 1920x1080)
     std::vector<BoundingBox> final_boxes;
-    if (final_indices.empty()) return final_boxes;
-
-    // We can't directly index the GPU tensors, so we download the full decoded lists
-    // and index them on the CPU. A more advanced version might have a custom "gather" kernel.
-    pimpl_->decoded_boxes_gpu.copy_to_host(pimpl_->h_boxes.data());
-    pimpl_->decoded_scores_gpu.copy_to_host(pimpl_->h_scores.data());
-    pimpl_->decoded_classes_gpu.copy_to_host(pimpl_->h_classes.data());
+    final_boxes.reserve(raw_results.size());
 
     float scale_x = (float)image.cols / pimpl_->config_.input_width;
     float scale_y = (float)image.rows / pimpl_->config_.input_height;
 
-    for (int idx : final_indices) {
+    for (const auto& res : raw_results) {
         BoundingBox box;
-        box.x1 = pimpl_->h_boxes[idx * 4 + 0] * scale_x;
-        box.y1 = pimpl_->h_boxes[idx * 4 + 1] * scale_y;
-        box.x2 = pimpl_->h_boxes[idx * 4 + 2] * scale_x;
-        box.y2 = pimpl_->h_boxes[idx * 4 + 3] * scale_y;
-        box.confidence = pimpl_->h_scores[idx];
-        box.class_id = pimpl_->h_classes[idx];
-        if (box.class_id < pimpl_->class_labels_.size()) {
+        // Scale back coordinates
+        box.x1 = res.x1 * scale_x;
+        box.y1 = res.y1 * scale_y;
+        box.x2 = res.x2 * scale_x;
+        box.y2 = res.y2 * scale_y;
+
+        box.confidence = res.confidence;
+        box.class_id = res.class_id;
+
+        // Label lookup
+        if (box.class_id >= 0 && box.class_id < (int)pimpl_->class_labels_.size()) {
             box.label = pimpl_->class_labels_[box.class_id];
+        } else {
+            box.label = "Class " + std::to_string(box.class_id);
         }
+
         final_boxes.push_back(box);
     }
 

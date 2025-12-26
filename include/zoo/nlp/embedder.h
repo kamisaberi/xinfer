@@ -4,35 +4,70 @@
 #include <vector>
 #include <memory>
 
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
+
 namespace xinfer::zoo::nlp {
 
-using TextEmbedding = std::vector<float>;
+    /**
+     * @brief Pooling Strategy for Sentence Embeddings.
+     */
+    enum class PoolingType {
+        CLS_TOKEN = 0, // Use the vector of the [CLS] token (first token)
+        MEAN = 1,      // Average of all visible token vectors
+        MAX = 2        // Max-over-time pooling
+    };
 
-struct EmbedderConfig {
-    std::string engine_path;
-    std::string vocab_path;
-    int max_sequence_length = 256;
-};
+    struct EmbedderConfig {
+        // Hardware Target
+        xinfer::Target target = xinfer::Target::INTEL_OV;
 
-class Embedder {
-public:
-    explicit Embedder(const EmbedderConfig& config);
-    ~Embedder();
+        // Model Path (e.g., all-MiniLM-L6-v2.onnx)
+        std::string model_path;
 
-    Embedder(const Embedder&) = delete;
-    Embedder& operator=(const Embedder&) = delete;
-    Embedder(Embedder&&) noexcept;
-    Embedder& operator=(Embedder&&) noexcept;
+        // Tokenizer Config
+        std::string vocab_path;
+        int max_sequence_length = 512;
+        bool do_lower_case = true;
 
-    TextEmbedding predict(const std::string& text);
-    std::vector<TextEmbedding> predict_batch(const std::vector<std::string>& texts);
+        // Embedding Strategy
+        PoolingType pooling = PoolingType::MEAN;
+        bool normalize = true; // L2 Normalize output (needed for Cosine Similarity)
 
-    static float compare(const TextEmbedding& emb1, const TextEmbedding& emb2);
+        // Vendor flags
+        std::vector<std::string> vendor_params;
+    };
 
-private:
-    struct Impl;
-    std::unique_ptr<Impl> pimpl_;
-};
+    class Embedder {
+    public:
+        explicit Embedder(const EmbedderConfig& config);
+        ~Embedder();
+
+        // Move semantics
+        Embedder(Embedder&&) noexcept;
+        Embedder& operator=(Embedder&&) noexcept;
+        Embedder(const Embedder&) = delete;
+        Embedder& operator=(const Embedder&) = delete;
+
+        /**
+         * @brief Generate embedding for a single text.
+         *
+         * @param text Input string.
+         * @return Vector of floats (e.g. 384 dims for MiniLM, 768 for BERT).
+         */
+        std::vector<float> encode(const std::string& text);
+
+        /**
+         * @brief Batch generation.
+         *
+         * @param texts List of strings.
+         * @return List of vectors.
+         */
+        std::vector<std::vector<float>> encode_batch(const std::vector<std::string>& texts);
+
+    private:
+        struct Impl;
+        std::unique_ptr<Impl> pimpl_;
+    };
 
 } // namespace xinfer::zoo::nlp
-

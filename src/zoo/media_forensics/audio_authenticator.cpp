@@ -98,4 +98,88 @@ struct AudioAuthenticator::Impl {
     }
 };
 
-// =============================================================================
+// =================================================================================
+// Public API
+// =================================================================================
+
+AudioAuthenticator::AudioAuthenticator(const AudioAuthConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
+
+AudioAuthenticator::~AudioAuthenticator() = default;
+AudioAuthenticator::AudioAuthenticator(AudioAuthenticator&&) noexcept = default;
+AudioAuthenticator& AudioAuthenticator::operator=(AudioAuthenticator&&) noexcept = default;
+
+AuthResult AudioAuthenticator::authenticate(const std::vector<float>& pcm_data) {
+    if (!pimpl_) throw std::runtime_error("AudioAuthenticator is null.");
+
+    // 1. Prepare Audio (Pad/Trim)
+    std::vector<float> fixed_audio = pimpl_->normalize_length(pcm_data);
+
+    // 2. Preprocess
+    if (pimpl_->config_.use_spectrogram) {
+        // Convert to Mel-Spectrogram Tensor
+        preproc::AudioBuffer buf;
+        buf.pcm_data = fixed_audio.data();
+        buf.num_samples = fixed_audio.size();
+        buf.sample_rate = pimpl_->config_.sample_rate;
+
+        // This writes to input_tensor, likely resizing it to [1, 1, Mels, Frames]
+        pimpl_->preproc_->process(buf, pimpl_->input_tensor);
+    } else {
+        // Raw Waveform Mode (e.g. RawNet)
+        // Input: [1, 1, Samples]
+        size_t len = fixed_audio.size();
+        pimpl_->input_tensor.resize({1, 1, (int64_t)len}, core::DataType::kFLOAT);
+        std::memcpy(pimpl_->input_tensor.data(), fixed_audio.data(), len * sizeof(float));
+    }
+
+    // 3. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
+
+    // 4. Postprocess
+    auto batch_results = pimpl_->postproc_->process(pimpl_->output_tensor);
+
+    AuthResult result;
+    result.is_deepfake = false;
+    result.fake_score = 0.0f;
+    result.real_score = 0.0f;
+    result.label = "Unknown";
+    result.confidence = 0.0f;
+
+    if (!batch_results.empty() && !batch_results[0].empty()) {
+        // Mapping depends on model. Common: 0=Real, 1=Fake.
+        // We find the scores for both.
+        float score_real = 0.0f;
+        float score_fake = 0.0f;
+
+        for (const auto& res : batch_results[0]) {
+            if (res.id == 0) score_real = res.score; // "Real"
+            if (res.id == 1) score_fake = res.score; // "Fake"
+        }
+
+        // Or if simple binary classification with one output node (sigmoid):
+        // If output size is 1, assume it's probability of Fake.
+        if (pimpl_->output_tensor.size() == 1) {
+            float* ptr = (float*)pimpl_->output_tensor.data();
+            score_fake = ptr[0];
+            score_real = 1.0f - score_fake;
+        }
+
+        result.fake_score = score_fake;
+        result.real_score = score_real;
+
+        if (score_fake > pimpl_->config_.threshold) {
+            result.is_deepfake = true;
+            result.label = "Fake";
+            result.confidence = score_fake;
+        } else {
+            result.is_deepfake = false;
+            result.label = "Real";
+            result.confidence = score_real;
+        }
+    }
+
+    return result;
+}
+
+} // namespace xinfer::zoo::media_forensics

@@ -1,90 +1,90 @@
-#include <include/zoo/document/signature_detector.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
+#include <xinfer/zoo/document/signature_detector.h>
+#include <xinfer/core/logging.h>
 
-#include <include/core/engine.h>
-#include <include/preproc/image_processor.h>
-#include <include/postproc/detection.h>
-#include <include/postproc/yolo_decoder.h>
+// --- Reuse the generic Object Detector ---
+#include <xinfer/zoo/vision/detector.h>
+
+#include <iostream>
+#include <algorithm>
 
 namespace xinfer::zoo::document {
 
-const int MAX_DECODED_SIGNATURES = 256;
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
 struct SignatureDetector::Impl {
-    SignatureDetectorConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::ImageProcessor> preprocessor_;
+    SignatureConfig config_;
 
-    core::Tensor decoded_boxes_gpu;
-    core::Tensor decoded_scores_gpu;
-    core::Tensor decoded_classes_gpu;
+    // High-level Zoo module for detection
+    std::unique_ptr<vision::ObjectDetector> detector_;
 
-    std::vector<float> h_boxes;
-    std::vector<float> h_scores;
+    Impl(const SignatureConfig& config) : config_(config) {
+        initialize();
+    }
 
-    Impl(const SignatureDetectorConfig& config) : config_(config) {
-        decoded_boxes_gpu = core::Tensor({MAX_DECODED_SIGNATURES, 4}, core::DataType::kFLOAT);
-        decoded_scores_gpu = core::Tensor({MAX_DECODED_SIGNATURES}, core::DataType::kFLOAT);
-        decoded_classes_gpu = core::Tensor({MAX_DECODED_SIGNATURES}, core::DataType::kINT32);
-        h_boxes.resize(MAX_DECODED_SIGNATURES * 4);
-        h_scores.resize(MAX_DECODED_SIGNATURES);
+    void initialize() {
+        // Configure the Object Detector for this specific task
+        vision::DetectorConfig det_cfg;
+        det_cfg.target = config_.target;
+        det_cfg.model_path = config_.model_path;
+
+        // We assume the model has only one class: "signature"
+        // The labels_path is often not needed if we know the class index is 0.
+
+        det_cfg.input_width = config_.input_width;
+        det_cfg.input_height = config_.input_height;
+        det_cfg.confidence_threshold = config_.conf_threshold;
+        det_cfg.nms_iou_threshold = 0.4f; // Signatures shouldn't overlap much
+        det_cfg.vendor_params = config_.vendor_params;
+
+        detector_ = std::make_unique<vision::ObjectDetector>(det_cfg);
     }
 };
 
-SignatureDetector::SignatureDetector(const SignatureDetectorConfig& config) : pimpl_(new Impl(config)) {
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Signature detector engine file not found: " + pimpl_->config_.engine_path);
-    }
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-    pimpl_->preprocessor_ = std::make_unique<preproc::ImageProcessor>(pimpl_->config_.input_width, pimpl_->config_.input_height, true);
-}
+// =================================================================================
+// Public API
+// =================================================================================
+
+SignatureDetector::SignatureDetector(const SignatureConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 SignatureDetector::~SignatureDetector() = default;
 SignatureDetector::SignatureDetector(SignatureDetector&&) noexcept = default;
 SignatureDetector& SignatureDetector::operator=(SignatureDetector&&) noexcept = default;
 
-std::vector<Signature> SignatureDetector::predict(const cv::Mat& document_image) {
-    if (!pimpl_) throw std::runtime_error("SignatureDetector is in a moved-from state.");
-
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(document_image, input_tensor);
-
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& raw_output = output_tensors[0];
-
-    postproc::yolo::decode(raw_output, pimpl_->config_.confidence_threshold,
-                           pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->decoded_classes_gpu);
-
-    std::vector<int> nms_indices = postproc::detection::nms(
-        pimpl_->decoded_boxes_gpu, pimpl_->decoded_scores_gpu, pimpl_->config_.nms_iou_threshold);
-
-    std::vector<Signature> final_signatures;
-    if (nms_indices.empty()) {
-        return final_signatures;
+std::vector<SignatureResult> SignatureDetector::detect(const cv::Mat& image) {
+    if (!pimpl_ || !pimpl_->detector_) {
+        throw std::runtime_error("SignatureDetector is not initialized.");
     }
 
-    pimpl_->decoded_boxes_gpu.copy_to_host(pimpl_->h_boxes.data());
-    pimpl_->decoded_scores_gpu.copy_to_host(pimpl_->h_scores.data());
+    std::vector<SignatureResult> results;
 
-    float scale_x = (float)document_image.cols / pimpl_->config_.input_width;
-    float scale_y = (float)document_image.rows / pimpl_->config_.input_height;
+    // 1. Run Detection
+    auto detections = pimpl_->detector_->predict(image);
 
-    for (int idx : nms_indices) {
-        Signature sig;
-        float x1 = pimpl_->h_boxes[idx * 4 + 0] * scale_x;
-        float y1 = pimpl_->h_boxes[idx * 4 + 1] * scale_y;
-        float x2 = pimpl_->h_boxes[idx * 4 + 2] * scale_x;
-        float y2 = pimpl_->h_boxes[idx * 4 + 3] * scale_y;
-        sig.bounding_box = cv::Rect(cv::Point((int)x1, (int)y1), cv::Point((int)x2, (int)y2));
-        sig.confidence = pimpl_->h_scores[idx];
+    // 2. Map to SignatureResult
+    for (const auto& det : detections) {
+        // If the model is multi-class, we might need to filter for class_id == "signature"
+        // Here, we assume a single-class model where all detections are signatures.
 
-        final_signatures.push_back(sig);
+        SignatureResult res;
+        res.signature_found = true;
+        res.confidence = det.confidence;
+        res.box = {det.x1, det.y1, det.x2, det.y2, det.confidence, det.class_id};
+
+        results.push_back(res);
     }
 
-    return final_signatures;
+    // If no detections found, we can return a single "not found" result
+    if (results.empty()) {
+        SignatureResult res;
+        res.signature_found = false;
+        res.confidence = 0.0f;
+        results.push_back(res);
+    }
+
+    return results;
 }
 
-} // namespace xinfer::zoo::document```
+} // namespace xinfer::zoo::document

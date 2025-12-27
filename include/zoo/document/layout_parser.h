@@ -5,22 +5,48 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
+#include <xinfer/postproc/vision/types.h> // For BoundingBox
+
 namespace xinfer::zoo::document {
 
+    /**
+     * @brief A single detected layout element.
+     */
     struct LayoutElement {
-        int class_id;
+        std::string type; // "paragraph", "title", "table", "figure", "list"
         float confidence;
-        std::string label;
-        cv::Rect bounding_box;
+        postproc::BoundingBox box;
+    };
+
+    struct LayoutResult {
+        std::vector<LayoutElement> elements;
+
+        // Visualization
+        cv::Mat annotated_image;
     };
 
     struct LayoutParserConfig {
-        std::string engine_path;
-        std::string labels_path = "";
-        float confidence_threshold = 0.7f;
-        float nms_iou_threshold = 0.5f;
-        int input_width = 800;
+        // Hardware Target (CPU/iGPU is often sufficient for document models)
+        xinfer::Target target = xinfer::Target::INTEL_OV;
+
+        // Model Path (e.g., yolov8_layout.onnx)
+        std::string model_path;
+
+        // Label Map (Class ID -> Element Type)
+        std::string labels_path;
+
+        // Input Specs (High resolution is needed for document structure)
+        int input_width = 1024;
         int input_height = 1024;
+
+        // Detection Settings
+        float conf_threshold = 0.5f;
+        float nms_threshold = 0.5f;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class LayoutParser {
@@ -28,12 +54,19 @@ namespace xinfer::zoo::document {
         explicit LayoutParser(const LayoutParserConfig& config);
         ~LayoutParser();
 
-        LayoutParser(const LayoutParser&) = delete;
-        LayoutParser& operator=(const LayoutParser&) = delete;
+        // Move semantics
         LayoutParser(LayoutParser&&) noexcept;
         LayoutParser& operator=(LayoutParser&&) noexcept;
+        LayoutParser(const LayoutParser&) = delete;
+        LayoutParser& operator=(const LayoutParser&) = delete;
 
-        std::vector<LayoutElement> predict(const cv::Mat& document_image);
+        /**
+         * @brief Parse the layout of a document page.
+         *
+         * @param image Input scan/image of the document.
+         * @return A list of all detected structural elements.
+         */
+        LayoutResult parse(const cv::Mat& image);
 
     private:
         struct Impl;
@@ -41,4 +74,3 @@ namespace xinfer::zoo::document {
     };
 
 } // namespace xinfer::zoo::document
-

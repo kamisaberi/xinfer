@@ -5,28 +5,52 @@
 #include <memory>
 #include <opencv2/opencv.hpp>
 
-namespace xinfer::core { class Tensor; }
-namespace xinfer::preproc { class ImageProcessor; }
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::generative {
 
-    struct VideoFrameInterpolationConfig {
-        std::string engine_path;
-        int input_width = 512;
-        int input_height = 512;
+    struct InterpolationConfig {
+        // Hardware Target (GPU is required for real-time performance)
+        xinfer::Target target = xinfer::Target::NVIDIA_TRT;
+
+        // Model Path (e.g., rife_v4.engine)
+        // Model takes two frames (and optical flow) as input.
+        std::string model_path;
+
+        // Input Specs (Model dependent)
+        int input_width = 448;
+        int input_height = 256;
+
+        // Upscaling Factor
+        // 2x = 30->60fps, 4x = 30->120fps
+        int upscale_factor = 2;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
-    class VideoFrameInterpolation {
+    class FrameInterpolator {
     public:
-        explicit VideoFrameInterpolation(const VideoFrameInterpolationConfig& config);
-        ~VideoFrameInterpolation();
+        explicit FrameInterpolator(const InterpolationConfig& config);
+        ~FrameInterpolator();
 
-        VideoFrameInterpolation(const VideoFrameInterpolation&) = delete;
-        VideoFrameInterpolation& operator=(const VideoFrameInterpolation&) = delete;
-        VideoFrameInterpolation(VideoFrameInterpolation&&) noexcept;
-        VideoFrameInterpolation& operator=(VideoFrameInterpolation&&) noexcept;
+        // Move semantics
+        FrameInterpolator(FrameInterpolator&&) noexcept;
+        FrameInterpolator& operator=(FrameInterpolator&&) noexcept;
+        FrameInterpolator(const FrameInterpolator&) = delete;
+        FrameInterpolator& operator=(const FrameInterpolator&) = delete;
 
-        cv::Mat predict(const cv::Mat& frame_before, const cv::Mat& frame_after);
+        /**
+         * @brief Generate intermediate frames between two input frames.
+         *
+         * @param frame0 The starting frame (t=0).
+         * @param frame1 The ending frame (t=1).
+         * @return A vector containing the newly synthesized frames.
+         *         If upscale_factor=2, returns one frame at t=0.5.
+         *         If upscale_factor=4, returns three frames at t=0.25, 0.5, 0.75.
+         */
+        std::vector<cv::Mat> interpolate(const cv::Mat& frame0, const cv::Mat& frame1);
 
     private:
         struct Impl;
@@ -34,4 +58,3 @@ namespace xinfer::zoo::generative {
     };
 
 } // namespace xinfer::zoo::generative
-

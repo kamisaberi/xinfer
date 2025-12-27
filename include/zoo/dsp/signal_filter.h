@@ -1,36 +1,50 @@
 #pragma once
 
-#include <string>
 #include <vector>
 #include <memory>
+#include <string>
 
 namespace xinfer::zoo::dsp {
 
     enum class FilterType {
-        LOW_PASS,
-        HIGH_PASS,
-        BAND_PASS
+        LOW_PASS = 0,
+        HIGH_PASS = 1,
+        BAND_PASS = 2,
+        NOTCH = 3
     };
 
-    struct SignalFilterConfig {
+    struct FilterConfig {
         FilterType type;
-        int sample_rate = 44100;
-        float cutoff_freq1 = 1000.0f;
-        float cutoff_freq2 = 0.0f; // Used for band-pass
-        int filter_length = 129; // Should be odd
+        double sample_rate_hz;
+
+        // Cutoff frequency (Hz)
+        double cutoff_freq_hz;
+
+        // For Band-pass/Notch, a second frequency is needed
+        double cutoff_freq2_hz = 0;
+
+        // Filter order (higher order = sharper cutoff)
+        int order = 4;
     };
 
     class SignalFilter {
     public:
-        explicit SignalFilter(const SignalFilterConfig& config);
+        explicit SignalFilter(const FilterConfig& config);
         ~SignalFilter();
 
-        SignalFilter(const SignalFilter&) = delete;
-        SignalFilter& operator=(const SignalFilter&) = delete;
+        // Move semantics
         SignalFilter(SignalFilter&&) noexcept;
         SignalFilter& operator=(SignalFilter&&) noexcept;
+        SignalFilter(const SignalFilter&) = delete;
+        SignalFilter& operator=(const SignalFilter&) = delete;
 
-        std::vector<float> process(const std::vector<float>& input_signal);
+        /**
+         * @brief Apply the filter to a signal.
+         *
+         * @param input_signal Raw 1D signal (e.g., from a sensor).
+         * @return The filtered signal.
+         */
+        std::vector<float> apply(const std::vector<float>& input_signal);
 
     private:
         struct Impl;
@@ -38,4 +52,3 @@ namespace xinfer::zoo::dsp {
     };
 
 } // namespace xinfer::zoo::dsp
-

@@ -1,79 +1,76 @@
-#include <include/zoo/document/handwriting_recognizer.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
-#include <cmath>
+#include <xinfer/zoo/document/handwriting_recognizer.h>
+#include <xinfer/core/logging.h>
 
-#include <include/core/engine.h>
-#include <include/core/tensor.h>
-#include <include/postproc/ctc_decoder.h>
+// --- Reuse the generic OCR module ---
+#include <xinfer/zoo/vision/ocr.h>
+
+#include <iostream>
 
 namespace xinfer::zoo::document {
 
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
+
 struct HandwritingRecognizer::Impl {
-    HandwritingRecognizerConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::vector<std::string> character_map_;
+    HwrConfig config_;
+
+    // We use the generic OcrRecognizer as the engine
+    std::unique_ptr<vision::OcrRecognizer> ocr_engine_;
+
+    Impl(const HwrConfig& config) : config_(config) {
+        initialize();
+    }
+
+    void initialize() {
+        // Configure the underlying OCR engine with our specific settings
+        vision::OcrConfig ocr_cfg;
+        ocr_cfg.target = config_.target;
+        ocr_cfg.model_path = config_.model_path;
+
+        // Handwriting models are often trained on grayscale [-1, 1]
+        ocr_cfg.input_width = config_.input_width;
+        ocr_cfg.input_height = config_.input_height;
+        ocr_cfg.mean = {127.5f};
+        ocr_cfg.std = {127.5f};
+
+        ocr_cfg.vocabulary = config_.vocab_path; // Pass path or raw string
+        ocr_cfg.blank_index = config_.blank_index;
+
+        ocr_cfg.vendor_params = config_.vendor_params;
+
+        ocr_engine_ = std::make_unique<vision::OcrRecognizer>(ocr_cfg);
+    }
 };
 
-HandwritingRecognizer::HandwritingRecognizer(const HandwritingRecognizerConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Handwriting recognizer engine file not found: " + pimpl_->config_.engine_path);
-    }
+// =================================================================================
+// Public API
+// =================================================================================
 
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-
-    if (!pimpl_->config_.character_map_path.empty()) {
-        std::ifstream labels_file(pimpl_->config_.character_map_path);
-        if (!labels_file) throw std::runtime_error("Could not open character map file: " + pimpl_->config_.character_map_path);
-        std::string line;
-        while (std::getline(labels_file, line)) {
-            pimpl_->character_map_.push_back(line);
-        }
-    }
-}
+HandwritingRecognizer::HandwritingRecognizer(const HwrConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 HandwritingRecognizer::~HandwritingRecognizer() = default;
 HandwritingRecognizer::HandwritingRecognizer(HandwritingRecognizer&&) noexcept = default;
 HandwritingRecognizer& HandwritingRecognizer::operator=(HandwritingRecognizer&&) noexcept = default;
 
-HandwritingRecognitionResult HandwritingRecognizer::predict(const cv::Mat& line_image) {
-    if (!pimpl_) throw std::runtime_error("HandwritingRecognizer is in a moved-from state.");
-
-    cv::Mat gray_image;
-    if (line_image.channels() == 3) {
-        cv::cvtColor(line_image, gray_image, cv::COLOR_BGR2GRAY);
-    } else {
-        gray_image = line_image;
+HwrResult HandwritingRecognizer::recognize(const cv::Mat& image_line) {
+    if (!pimpl_ || !pimpl_->ocr_engine_) {
+        throw std::runtime_error("HandwritingRecognizer is not initialized.");
     }
 
-    int target_h = pimpl_->config_.input_height;
-    int target_w = static_cast<int>((float)target_h / gray_image.rows * gray_image.cols);
+    // 1. Pre-processing specific to handwriting (optional)
+    // For example, binarization or skew correction
+    cv::Mat processed_image = image_line;
+    // cv::threshold(image_line, processed_image, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
 
-    cv::Mat resized_image;
-    cv::resize(gray_image, resized_image, cv::Size(target_w, target_h));
+    // 2. Delegate to the generic OCR engine
+    auto ocr_res = pimpl_->ocr_engine_->recognize(processed_image);
 
-    resized_image.convertTo(resized_image, CV_32F, 1.0 / 255.0);
-
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    input_shape[0] = 1;
-    input_shape[2] = target_h;
-    input_shape[3] = target_w;
-
-    core::Tensor input_tensor(input_shape, core::DataType::kFLOAT);
-    input_tensor.copy_from_host(resized_image.data);
-
-    pimpl_->engine_->setInputShape("input", input_shape);
-    auto output_tensors = pimpl_->engine_->infer({input_tensor});
-    const core::Tensor& logits_tensor = output_tensors[0];
-
-    auto decoded_result = postproc::ctc::decode(logits_tensor, pimpl_->character_map_);
-
-    HandwritingRecognitionResult result;
-    result.text = decoded_result.first;
-    result.confidence = decoded_result.second;
+    // 3. Map to HWR result format
+    HwrResult result;
+    result.text = ocr_res.text;
+    result.confidence = ocr_res.confidence;
 
     return result;
 }

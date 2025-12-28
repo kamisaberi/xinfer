@@ -1,0 +1,8 @@
+//
+// Created by kami on 12/29/2025.
+//
+
+#ifndef XINFER_PROGRESS_DELEGATE_H
+#define XINFER_PROGRESS_DELEGATE_H
+
+#endif //XINFER_PROGRESS_DELEGATE_H

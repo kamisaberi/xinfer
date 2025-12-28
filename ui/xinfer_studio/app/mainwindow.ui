@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+    <class>MainWindow</class>
+    <widget class="QMainWindow" name="MainWindow">
+        <property name="geometry">
+            <rect>
+                <x>0</x>
+                <y>0</y>
+                <width>1280</width>
+                <height>800</height>
+            </rect>
+        </property>
+        <property name="windowTitle">
+            <string>xInfer Studio</string>
+        </property>
+        <property name="styleSheet">
+            <string notr="true">QMainWindow { background-color: #2b2b2b; color: #ffffff; }
+                QGroupBox { font-weight: bold; border: 1px solid #555; margin-top: 10px; border-radius: 4px; }
+                QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; }
+                QPushButton { background-color: #0d6efd; color: white; border-radius: 4px; padding: 6px; }
+                QPushButton:hover { background-color: #0b5ed7; }
+                QPushButton:pressed { background-color: #0a58ca; }
+                QPushButton#btnStop { background-color: #dc3545; }
+                QPushButton#btnStop:hover { background-color: #bb2d3b; }
+                QLineEdit { padding: 4px; border: 1px solid #555; background-color: #1e1e1e; color: white; border-radius: 2px; }
+                QComboBox { padding: 4px; border: 1px solid #555; background-color: #1e1e1e; color: white; border-radius: 2px; }
+                QPlainTextEdit { background-color: #1e1e1e; color: #00ff00; font-family: Consolas, Monospace; border: 1px solid #555; }</string>
+        </property>
+        <widget class="QWidget" name="centralwidget">
+            <layout class="QVBoxLayout" name="verticalLayout">
+                <property name="spacing">
+                    <number>10</number>
+                </property>
+                <property name="leftMargin">
+                    <number>10</number>
+                </property>
+                <property name="topMargin">
+                    <number>10</number>
+                </property>
+                <property name="rightMargin">
+                    <number>10</number>
+                </property>
+                <property name="bottomMargin">
+                    <number>10</number>
+                </property>
+
+                <!-- Top Configuration Bar -->
+                <item>
+                    <widget class="QGroupBox" name="groupBoxConfig">
+                        <property name="title">
+                            <string>Inference Configuration</string>
+                        </property>
+                        <property name="maximumHeight">
+                            <number>80</number>
+                        </property>
+                        <layout class="QHBoxLayout" name="horizontalLayout">
+                            <item>
+                                <widget class="QLabel" name="labelTarget">
+                                    <property name="text">
+                                        <string>Target Device:</string>
+                                    </property>
+                                </widget>
+                            </item>
+                            <item>
+                                <widget class="QComboBox" name="cmbTarget">
+                                    <property name="minimumWidth">
+                                        <number>150</number>
+                                    </property>
+                                    <item>
+                                        <property name="text">
+                                            <string>Local CPU (OpenVINO)</string>
+                                        </property>
+                                    </item>
+                                    <item>
+                                        <property name="text">
+                                            <string>NVIDIA GPU (TensorRT)</string>
+                                        </property>
+                                    </item>
+                                    <item>
+                                        <property name="text">
+                                            <string>Rockchip NPU (RKNN)</string>
+                                        </property>
+                                    </item>
+                                </widget>
+                            </item>
+                            <item>
+                                <widget class="QLabel" name="labelModel">
+                                    <property name="text">
+                                        <string>Model Path:</string>
+                                    </property>
+                                </widget>
+                            </item>
+                            <item>
+                                <widget class="QLineEdit" name="lineEditModel">
+                                    <property name="placeholderText">
+                                        <string>Select .engine, .rknn, or .xml file...</string>
+                                    </property>
+                                </widget>
+                            </item>
+                            <item>
+                                <widget class="QPushButton" name="btnBrowse">
+                                    <property name="text">
+                                        <string>Browse...</string>
+                                    </property>
+                                </widget>
+                            </item>
+                            <item>
+                                <widget class="QLabel" name="labelCamera">
+                                    <property name="text">
+                                        <string>Camera ID:</string>
+                                    </property>
+                                </widget>
+                            </item>
+                            <item>
+                                <widget class="QSpinBox" name="spinCameraId">
+                                    <property name="styleSheet">
+                                        <string>background-color: #1e1e1e; color: white;</string>
+                                    </property>
+                                </widget>
+                            </item>
+                        </layout>
+                    </widget>
+                </item>
+
+                <!-- Main Content Splitter (Video | Logs) -->
+                <item>
+                    <widget class="QSplitter" name="splitter">
+                        <property name="orientation">
+                            <enum>Qt::Horizontal</enum>
+                        </property>
+
+                        <!-- Custom Video Widget -->
+                        <widget class="VideoDisplay" name="videoWidget" native="true">
+                            <property name="minimumSize">
+                                <size>
+                                    <width>640</width>
+                                    <height>480</height>
+                                </size>
+                            </property>
+                        </widget>
+
+                        <!-- Side Panel -->
+                        <widget class="QGroupBox" name="groupBoxResults">
+                            <property name="title">
+                                <string>Live Results</string>
+                            </property>
+                            <layout class="QVBoxLayout" name="verticalLayout_2">
+                                <item>
+                                    <widget class="QPlainTextEdit" name="txtLog">
+                                        <property name="readOnly">
+                                            <bool>true</bool>
+                                        </property>
+                                    </widget>
+                                </item>
+                            </layout>
+                        </widget>
+                    </widget>
+                </item>
+
+                <!-- Bottom Control Bar -->
+                <item>
+                    <layout class="QHBoxLayout" name="horizontalLayout_2">
+                        <item>
+                            <spacer name="horizontalSpacer">
+                                <property name="orientation">
+                                    <enum>Qt::Horizontal</enum>
+                                </property>
+                                <property name="sizeHint" stdset="0">
+                                    <size>
+                                        <width>40</width>
+                                        <height>20</height>
+                                    </size>
+                                </property>
+                            </spacer>
+                        </item>
+                        <item>
+                            <widget class="QPushButton" name="btnStart">
+                                <property name="minimumSize">
+                                    <size>
+                                        <width>120</width>
+                                        <height>40</height>
+                                    </size>
+                                </property>
+                                <property name="font">
+                                    <font>
+                                        <bold>true</bold>
+                                        <pointsize>10</pointsize>
+                                    </font>
+                                </property>
+                                <property name="text">
+                                    <string>▶ Start Inference</string>
+                                </property>
+                            </widget>
+                        </item>
+                        <item>
+                            <widget class="QPushButton" name="btnStop">
+                                <property name="enabled">
+                                    <bool>false</bool>
+                                </property>
+                                <property name="minimumSize">
+                                    <size>
+                                        <width>120</width>
+                                        <height>40</height>
+                                    </size>
+                                </property>
+                                <property name="font">
+                                    <font>
+                                        <bold>true</bold>
+                                        <pointsize>10</pointsize>
+                                    </font>
+                                </property>
+                                <property name="text">
+                                    <string>⏹ Stop</string>
+                                </property>
+                            </widget>
+                        </item>
+                        <item>
+                            <spacer name="horizontalSpacer_2">
+                                <property name="orientation">
+                                    <enum>Qt::Horizontal</enum>
+                                </property>
+                                <property name="sizeHint" stdset="0">
+                                    <size>
+                                        <width>40</width>
+                                        <height>20</height>
+                                    </size>
+                                </property>
+                            </spacer>
+                        </item>
+                    </layout>
+                </item>
+            </layout>
+        </widget>
+
+        <widget class="QMenuBar" name="menubar">
+            <property name="geometry">
+                <rect>
+                    <x>0</x>
+                    <y>0</y>
+                    <width>1280</width>
+                    <height>22</height>
+                </rect>
+            </property>
+            <widget class="QMenu" name="menuFile">
+                <property name="title">
+                    <string>File</string>
+                </property>
+                <addaction name="actionExit"/>
+            </widget>
+            <widget class="QMenu" name="menuTools">
+                <property name="title">
+                    <string>Tools</string>
+                </property>
+                <addaction name="actionModel_Compiler"/>
+                <addaction name="actionDevice_Manager"/>
+            </widget>
+            <addaction name="menuFile"/>
+            <addaction name="menuTools"/>
+        </widget>
+
+        <widget class="QStatusBar" name="statusbar"/>
+
+        <action name="actionExit">
+            <property name="text">
+                <string>Exit</string>
+            </property>
+        </action>
+        <action name="actionModel_Compiler">
+            <property name="text">
+                <string>Model Compiler</string>
+            </property>
+        </action>
+        <action name="actionDevice_Manager">
+            <property name="text">
+                <string>Device Manager</string>
+            </property>
+        </action>
+    </widget>
+
+    <!-- Mapping Custom Widgets to Header Files -->
+    <customwidgets>
+        <customwidget>
+            <class>VideoDisplay</class>
+            <extends>QWidget</extends>
+            <header>../widgets/video_display.h</header>
+            <container>1</container>
+        </customwidget>
+    </customwidgets>
+
+    <resources/>
+    <connections/>
+</ui>

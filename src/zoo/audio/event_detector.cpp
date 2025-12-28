@@ -1,100 +1,137 @@
-#include <include/zoo/audio/event_detector.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
-#include <cmath>
+#include <xinfer/zoo/audio/event_detector.h>
+#include <xinfer/core/logging.h>
 
-#include <include/core/engine.h>
+// --- We reuse the Audio Classifier module internally ---
+#include <xinfer/zoo/audio/classifier.h>
+
+#include <iostream>
+#include <vector>
+#include <deque>
+#include <numeric>
 
 namespace xinfer::zoo::audio {
 
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
+
 struct EventDetector::Impl {
     EventDetectorConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::AudioProcessor> preprocessor_;
-    std::vector<std::string> class_labels_;
+
+    // We reuse the Classifier as our core engine
+    std::unique_ptr<Classifier> classifier_;
+
+    // --- Streaming Buffers ---
+    // A ring buffer to hold the continuous audio stream
+    std::deque<float> stream_buffer_;
+
+    // Size of buffers in samples
+    size_t window_samples_;
+    size_t stride_samples_;
+
+    long long current_timestamp_ = 0;
+
+    Impl(const EventDetectorConfig& config) : config_(config) {
+        initialize();
+    }
+
+    void initialize() {
+        // Configure the underlying Classifier
+        ClassifierConfig cls_cfg;
+        cls_cfg.target = config_.target;
+        cls_cfg.model_path = config_.model_path;
+        cls_cfg.labels_path = config_.labels_path;
+        cls_cfg.sample_rate = config_.sample_rate;
+        cls_cfg.duration_sec = config_.window_sec;
+        cls_cfg.n_fft = config_.n_fft;
+        cls_cfg.hop_length = config_.hop_length;
+        cls_cfg.n_mels = config_.n_mels;
+        cls_cfg.top_k = 5; // Get a few top candidates
+        cls_cfg.confidence_threshold = config_.confidence_threshold;
+
+        classifier_ = std::make_unique<Classifier>(cls_cfg);
+
+        // Calculate buffer sizes in samples
+        window_samples_ = config_.sample_rate * config_.window_sec;
+        stride_samples_ = config_.sample_rate * config_.stride_sec;
+    }
+
+    // Simple energy-based Voice Activity Detection (VAD)
+    bool is_active(const std::vector<float>& chunk) {
+        if (chunk.empty()) return false;
+
+        double sum_sq = 0.0;
+        for (float s : chunk) sum_sq += s * s;
+
+        double rms = std::sqrt(sum_sq / chunk.size());
+        return (rms > config_.vad_energy_threshold);
+    }
 };
 
+// =================================================================================
+// Public API
+// =================================================================================
+
 EventDetector::EventDetector(const EventDetectorConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Audio event detector engine file not found: " + pimpl_->config_.engine_path);
-    }
-
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-
-    pimpl_->preprocessor_ = std::make_unique<preproc::AudioProcessor>(pimpl_->config_.audio_config);
-
-    if (!pimpl_->config_.labels_path.empty()) {
-        std::ifstream labels_file(pimpl_->config_.labels_path);
-        if (!labels_file) throw std::runtime_error("Could not open labels file: " + pimpl_->config_.labels_path);
-        std::string line;
-        while (std::getline(labels_file, line)) {
-            pimpl_->class_labels_.push_back(line);
-        }
-    }
-}
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 EventDetector::~EventDetector() = default;
 EventDetector::EventDetector(EventDetector&&) noexcept = default;
 EventDetector& EventDetector::operator=(EventDetector&&) noexcept = default;
 
-std::vector<AudioEvent> EventDetector::predict(const std::vector<float>& waveform) {
-    if (!pimpl_) throw std::runtime_error("EventDetector is in a moved-from state.");
+void EventDetector::reset() {
+    if (pimpl_) pimpl_->stream_buffer_.clear();
+}
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor spectrogram_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(waveform, spectrogram_tensor);
+std::vector<AudioEvent> EventDetector::process_stream(const std::vector<float>& pcm_chunk, long long timestamp_ms) {
+    if (!pimpl_ || !pimpl_->classifier_) throw std::runtime_error("EventDetector is null.");
 
-    auto output_tensors = pimpl_->engine_->infer({spectrogram_tensor});
-    const core::Tensor& probability_tensor = output_tensors[0];
+    // 1. Add new data to the buffer
+    pimpl_->stream_buffer_.insert(pimpl_->stream_buffer_.end(), pcm_chunk.begin(), pcm_chunk.end());
 
-    auto prob_shape = probability_tensor.shape();
-    const int num_frames = prob_shape[1];
-    const int num_classes = prob_shape[2];
+    if (pimpl_->current_timestamp_ == 0) pimpl_->current_timestamp_ = timestamp_ms;
 
-    std::vector<float> probabilities(probability_tensor.num_elements());
-    probability_tensor.copy_to_host(probabilities.data());
+    std::vector<AudioEvent> detected_events;
 
-    std::vector<AudioEvent> events;
-    float frame_duration_seconds = (float)pimpl_->config_.audio_config.hop_length / pimpl_->config_.audio_config.sample_rate;
+    // 2. Process in sliding windows
+    while (pimpl_->stream_buffer_.size() >= pimpl_->window_samples_) {
+        // A. Extract a window
+        std::vector<float> window(pimpl_->window_samples_);
+        std::copy(pimpl_->stream_buffer_.begin(),
+                  pimpl_->stream_buffer_.begin() + pimpl_->window_samples_,
+                  window.begin());
 
-    for (int c = 0; c < num_classes; ++c) {
-        bool in_event = false;
-        float start_time = 0.0f;
-        for (int t = 0; t < num_frames; ++t) {
-            float prob = probabilities[t * num_classes + c];
-            if (prob > pimpl_->config_.event_threshold && !in_event) {
-                in_event = true;
-                start_time = (float)t * frame_duration_seconds;
-            } else if (prob < pimpl_->config_.event_threshold && in_event) {
-                in_event = false;
-                AudioEvent event;
-                event.class_id = c;
-                event.start_time_seconds = start_time;
-                event.end_time_seconds = (float)t * frame_duration_seconds;
-                event.confidence = 1.0f;
-                if (c < pimpl_->class_labels_.size()) {
-                    event.label = pimpl_->class_labels_[c];
+        // B. Run VAD to save power
+        if (pimpl_->is_active(window)) {
+            // C. Classify the window
+            auto results = pimpl_->classifier_->classify(window);
+
+            // D. Log Events
+            for (const auto& res : results) {
+                // Ignore "background" or "silence" classes
+                if (res.label.find("Speech") != std::string::npos ||
+                    res.label.find("Silence") != std::string::npos) {
+                    continue;
                 }
-                events.push_back(event);
+
+                AudioEvent evt;
+                evt.label = res.label;
+                evt.confidence = res.confidence;
+                evt.start_time_ms = pimpl_->current_timestamp_;
+                evt.end_time_ms = pimpl_->current_timestamp_ + (long long)(pimpl_->config_.window_sec * 1000);
+
+                detected_events.push_back(evt);
             }
         }
-        if (in_event) {
-            AudioEvent event;
-            event.class_id = c;
-            event.start_time_seconds = start_time;
-            event.end_time_seconds = (float)num_frames * frame_duration_seconds;
-            event.confidence = 1.0f;
-            if (c < pimpl_->class_labels_.size()) {
-                event.label = pimpl_->class_labels_[c];
-            }
-            events.push_back(event);
-        }
+
+        // E. Slide the window
+        pimpl_->stream_buffer_.erase(pimpl_->stream_buffer_.begin(),
+                                     pimpl_->stream_buffer_.begin() + pimpl_->stride_samples_);
+
+        pimpl_->current_timestamp_ += (long long)(pimpl_->config_.stride_sec * 1000);
     }
 
-    return events;
+    return detected_events;
 }
 
 } // namespace xinfer::zoo::audio

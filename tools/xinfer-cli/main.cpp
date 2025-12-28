@@ -17,6 +17,11 @@
 #include <xinfer/compiler/base_compiler.h> // For stringToTarget
 #include <xinfer/backends/backend_factory.h>
 
+
+#include <xinfer/utils/downloader.h> // <-- Add this include
+
+
+
 namespace fs = std::filesystem;
 using namespace xinfer;
 
@@ -209,6 +214,19 @@ void handle_benchmark(const cxxopts::ParseResult& args) {
     printf(" Throughput (B=1): %.2f FPS\n", 1000.0 / mean);
     std::cout << "--------------------------------------------------" << std::endl;
 }
+
+
+// =================================================================================
+// Command: DOWNLOAD
+// =================================================================================
+void handle_download(const cxxopts::ParseResult& args) {
+    std::string url = args["url"].as<std::string>();
+    std::string output = args["output"].as<std::string>();
+    std::string sha = args.count("sha256") ? args["sha256"].as<std::string>() : "";
+
+    utils::Downloader::download(url, output, sha);
+}
+
 
 // =================================================================================
 // Main Entry

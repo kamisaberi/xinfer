@@ -1,0 +1,8 @@
+//
+// Created by kami on 12/29/2025.
+//
+
+#ifndef XINFER_SETTINGS_DIALOG_H
+#define XINFER_SETTINGS_DIALOG_H
+
+#endif //XINFER_SETTINGS_DIALOG_H

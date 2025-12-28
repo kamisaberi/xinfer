@@ -1,0 +1,25 @@
+{
+  "devices": [
+    {
+      "name": "jetson_orin_1",
+      "ip": "192.168.1.50",
+      "user": "nvidia",
+      "target": "nv-trt",
+      "path": "/home/nvidia/xinfer_apps/"
+    },
+    {
+      "name": "rockchip_cam_5",
+      "ip": "192.168.1.55",
+      "user": "rock",
+      "target": "rockchip-rknn",
+      "path": "/home/rock/apps/"
+    },
+    {
+      "name": "kria_fpga",
+      "ip": "192.168.1.60",
+      "user": "petalinux",
+      "target": "amd-vitis",
+      "path": "/home/petalinux/apps/"
+    }
+  ]
+}

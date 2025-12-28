@@ -1,80 +1,97 @@
-#include <include/zoo/audio/language_identifier.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
-#include <numeric>
-#include <algorithm>
-#include <cmath>
+#include <xinfer/zoo/audio/language_identifier.h>
+#include <xinfer/core/logging.h>
 
-#include <include/core/engine.h>
+// --- We reuse the generic Audio Classifier module ---
+#include <xinfer/zoo/audio/classifier.h>
+
+#include <iostream>
+#include <vector>
+#include <map>
 
 namespace xinfer::zoo::audio {
 
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
+
 struct LanguageIdentifier::Impl {
-    LanguageIdentifierConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::AudioProcessor> preprocessor_;
-    std::vector<std::string> language_labels_;
+    LanguageIdConfig config_;
+
+    // The generic classifier does all the work
+    std::unique_ptr<Classifier> classifier_;
+
+    // Optional map from full name to short code
+    std::map<std::string, std::string> name_to_code_;
+
+    Impl(const LanguageIdConfig& config) : config_(config) {
+        initialize();
+    }
+
+    void initialize() {
+        // 1. Configure the underlying classifier
+        ClassifierConfig cls_cfg;
+        cls_cfg.target = config_.target;
+        cls_cfg.model_path = config_.model_path;
+        cls_cfg.labels_path = config_.labels_path;
+        cls_cfg.sample_rate = config_.sample_rate;
+        cls_cfg.duration_sec = config_.duration_sec;
+        cls_cfg.n_fft = config_.n_fft;
+        cls_cfg.hop_length = config_.hop_length;
+        cls_cfg.n_mels = config_.n_mels;
+        cls_cfg.top_k = config_.top_k;
+        cls_cfg.confidence_threshold = config_.confidence_threshold;
+
+        classifier_ = std::make_unique<Classifier>(cls_cfg);
+
+        // 2. Populate language code map (optional, can be loaded from a file)
+        name_to_code_["English"] = "en";
+        name_to_code_["Spanish"] = "es";
+        name_to_code_["Chinese"] = "zh";
+        name_to_code_["German"] = "de";
+        name_to_code_["French"] = "fr";
+        // ... and so on
+    }
 };
 
-LanguageIdentifier::LanguageIdentifier(const LanguageIdentifierConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Language identifier engine file not found: " + pimpl_->config_.engine_path);
-    }
+// =================================================================================
+// Public API
+// =================================================================================
 
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
-
-    pimpl_->preprocessor_ = std::make_unique<preproc::AudioProcessor>(pimpl_->config_.audio_config);
-
-    if (!pimpl_->config_.labels_path.empty()) {
-        std::ifstream labels_file(pimpl_->config_.labels_path);
-        if (!labels_file) throw std::runtime_error("Could not open labels file: " + pimpl_->config_.labels_path);
-        std::string line;
-        while (std::getline(labels_file, line)) {
-            pimpl_->language_labels_.push_back(line);
-        }
-    }
-}
+LanguageIdentifier::LanguageIdentifier(const LanguageIdConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 LanguageIdentifier::~LanguageIdentifier() = default;
 LanguageIdentifier::LanguageIdentifier(LanguageIdentifier&&) noexcept = default;
 LanguageIdentifier& LanguageIdentifier::operator=(LanguageIdentifier&&) noexcept = default;
 
-LanguageIdentificationResult LanguageIdentifier::predict(const std::vector<float>& waveform) {
-    if (!pimpl_) throw std::runtime_error("LanguageIdentifier is in a moved-from state.");
-
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor spectrogram_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(waveform, spectrogram_tensor);
-
-    auto output_tensors = pimpl_->engine_->infer({spectrogram_tensor});
-    const core::Tensor& logits_tensor = output_tensors[0];
-
-    std::vector<float> logits(logits_tensor.num_elements());
-    logits_tensor.copy_to_host(logits.data());
-
-    auto max_it = std::max_element(logits.begin(), logits.end());
-    int max_idx = std::distance(logits.begin(), max_it);
-    float max_val = *max_it;
-
-    float sum_exp = 0.0f;
-    for (float logit : logits) {
-        sum_exp += expf(logit - max_val);
-    }
-    float confidence = 1.0f / sum_exp;
-
-    LanguageIdentificationResult result;
-    result.lang_id = max_idx;
-    result.confidence = confidence;
-    if (max_idx < pimpl_->language_labels_.size()) {
-        result.language_code = pimpl_->language_labels_[max_idx];
-    } else {
-        result.language_code = "Unknown";
+std::vector<LanguageResult> LanguageIdentifier::identify(const std::vector<float>& pcm_data) {
+    if (!pimpl_ || !pimpl_->classifier_) {
+        throw std::runtime_error("LanguageIdentifier is not initialized.");
     }
 
-    return result;
+    // 1. Delegate to the audio classifier
+    auto cls_results = pimpl_->classifier_->classify(pcm_data);
+
+    // 2. Map to the specific LanguageResult struct
+    std::vector<LanguageResult> results;
+    results.reserve(cls_results.size());
+
+    for (const auto& res : cls_results) {
+        LanguageResult lr;
+        lr.language_name = res.label;
+        lr.confidence = res.confidence;
+
+        // Lookup code
+        if (pimpl_->name_to_code_.count(res.label)) {
+            lr.language_code = pimpl_->name_to_code_.at(res.label);
+        } else {
+            lr.language_code = "unk"; // Unknown
+        }
+
+        results.push_back(lr);
+    }
+
+    return results;
 }
 
 } // namespace xinfer::zoo::audio

@@ -1,86 +1,160 @@
-#include <include/zoo/audio/classifier.h>
-#include <stdexcept>
-#include <fstream>
-#include <vector>
-#include <numeric>
-#include <algorithm>
-#include <cmath>
+#include <xinfer/zoo/audio/classifier.h>
+#include <xinfer/core/logging.h>
+#include <xinfer/core/tensor.h>
 
-#include <include/core/engine.h>
+// --- The Three Pillars ---
+#include <xinfer/backends/backend_factory.h>
+#include <xinfer/preproc/factory.h>
+#include <xinfer/postproc/factory.h>
+// Reusing vision's classification postproc, as the math is the same
+#include <xinfer/postproc/vision/classification_interface.h>
+
+#include <iostream>
+#include <fstream>
+#include <algorithm>
 
 namespace xinfer::zoo::audio {
 
-struct Classifier::Impl {
-    ClassifierConfig config_;
-    std::unique_ptr<core::InferenceEngine> engine_;
-    std::unique_ptr<preproc::AudioProcessor> preprocessor_;
-    std::vector<std::string> class_labels_;
-};
+// =================================================================================
+// PImpl Implementation
+// =================================================================================
 
-Classifier::Classifier(const ClassifierConfig& config)
-    : pimpl_(new Impl{config})
-{
-    if (!std::ifstream(pimpl_->config_.engine_path).good()) {
-        throw std::runtime_error("Audio classifier engine file not found: " + pimpl_->config_.engine_path);
+struct Classifier::Impl {
+    AudioClassifierConfig config_;
+
+    // Pipeline Components
+    std::unique_ptr<backends::IBackend> engine_;
+    std::unique_ptr<preproc::IAudioPreprocessor> preproc_;
+    std::unique_ptr<postproc::IClassificationPostprocessor> postproc_;
+
+    // Data Containers
+    core::Tensor input_tensor;
+    core::Tensor output_tensor;
+
+    std::vector<std::string> labels_;
+
+    Impl(const AudioClassifierConfig& config) : config_(config) {
+        initialize();
     }
 
-    pimpl_->engine_ = std::make_unique<core::InferenceEngine>(pimpl_->config_.engine_path);
+    void initialize() {
+        // 1. Load Backend
+        engine_ = backends::BackendFactory::create(config_.target);
 
-    pimpl_->preprocessor_ = std::make_unique<preproc::AudioProcessor>(pimpl_->config_.audio_config);
+        xinfer::Config backend_cfg;
+        backend_cfg.model_path = config_.model_path;
+        backend_cfg.vendor_params = config_.vendor_params;
 
-    if (!pimpl_->config_.labels_path.empty()) {
-        std::ifstream labels_file(pimpl_->config_.labels_path);
-        if (!labels_file) throw std::runtime_error("Could not open labels file: " + pimpl_->config_.labels_path);
+        if (!engine_->load_model(backend_cfg.model_path)) {
+            throw std::runtime_error("AudioClassifier: Failed to load model.");
+        }
+
+        // 2. Setup Audio Preprocessor
+        preproc_ = preproc::create_audio_preprocessor(config_.target);
+
+        preproc::AudioPreprocConfig aud_cfg;
+        aud_cfg.sample_rate = config_.sample_rate;
+        aud_cfg.feature_type = preproc::AudioFeatureType::MEL_SPECTROGRAM;
+        aud_cfg.n_fft = config_.n_fft;
+        aud_cfg.hop_length = config_.hop_length;
+        aud_cfg.n_mels = config_.n_mels;
+        aud_cfg.log_mel = true; // CNNs work best with log-mel
+
+        preproc_->init(aud_cfg);
+
+        // 3. Setup Post-processor
+        postproc_ = postproc::create_classification(config_.target);
+
+        postproc::ClassificationConfig cls_cfg;
+        cls_cfg.top_k = config_.top_k;
+        cls_cfg.apply_softmax = true;
+
+        if (!config_.labels_path.empty()) {
+            load_labels(config_.labels_path);
+            cls_cfg.labels = labels_;
+        }
+
+        postproc_->init(cls_cfg);
+    }
+
+    void load_labels(const std::string& path) {
+        std::ifstream file(path);
+        if (!file.is_open()) return;
         std::string line;
-        while (std::getline(labels_file, line)) {
-            pimpl_->class_labels_.push_back(line);
+        while (std::getline(file, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            labels_.push_back(line);
         }
     }
-}
+
+    // Helper: Pad or crop audio to the fixed duration the model expects
+    std::vector<float> normalize_length(const std::vector<float>& pcm) {
+        size_t target_len = config_.sample_rate * config_.duration_sec;
+
+        if (pcm.size() == target_len) return pcm;
+
+        std::vector<float> fixed(target_len, 0.0f); // Pad with silence
+
+        if (pcm.size() > target_len) {
+            // Trim (take center)
+            size_t start = (pcm.size() - target_len) / 2;
+            std::copy(pcm.begin() + start, pcm.begin() + start + target_len, fixed.begin());
+        } else {
+            // Pad
+            std::copy(pcm.begin(), pcm.end(), fixed.begin());
+        }
+        return fixed;
+    }
+};
+
+// =================================================================================
+// Public API
+// =================================================================================
+
+Classifier::Classifier(const AudioClassifierConfig& config)
+    : pimpl_(std::make_unique<Impl>(config)) {}
 
 Classifier::~Classifier() = default;
 Classifier::Classifier(Classifier&&) noexcept = default;
 Classifier& Classifier::operator=(Classifier&&) noexcept = default;
 
-std::vector<AudioClassificationResult> Classifier::predict(const std::vector<float>& waveform, int top_k) {
-    if (!pimpl_) throw std::runtime_error("Classifier is in a moved-from state.");
+std::vector<AudioClassResult> Classifier::classify(const std::vector<float>& pcm_data) {
+    if (!pimpl_) throw std::runtime_error("AudioClassifier is null.");
 
-    auto input_shape = pimpl_->engine_->get_input_shape(0);
-    core::Tensor spectrogram_tensor(input_shape, core::DataType::kFLOAT);
-    pimpl_->preprocessor_->process(waveform, spectrogram_tensor);
+    // 1. Fix Audio Length
+    std::vector<float> fixed_audio = pimpl_->normalize_length(pcm_data);
 
-    auto output_tensors = pimpl_->engine_->infer({spectrogram_tensor});
-    const core::Tensor& logits_tensor = output_tensors[0];
+    // 2. Preprocess (PCM -> Mel Spectrogram)
+    preproc::AudioBuffer buf;
+    buf.pcm_data = fixed_audio.data();
+    buf.num_samples = fixed_audio.size();
+    buf.sample_rate = pimpl_->config_.sample_rate;
 
-    std::vector<float> logits(logits_tensor.num_elements());
-    logits_tensor.copy_to_host(logits.data());
+    pimpl_->preproc_->process(buf, pimpl_->input_tensor);
 
-    std::vector<int> indices(logits.size());
-    std::iota(indices.begin(), indices.end(), 0);
+    // 3. Inference
+    pimpl_->engine_->predict({pimpl_->input_tensor}, {pimpl_->output_tensor});
 
-    std::partial_sort(indices.begin(), indices.begin() + top_k, indices.end(),
-                      [&](int a, int b) { return logits[a] > logits[b]; });
+    // 4. Postprocess
+    auto raw_results = pimpl_->postproc_->process(pimpl_->output_tensor);
 
-    float max_logit = logits[indices[0]];
-    float sum_exp = 0.0f;
-    std::vector<float> top_k_probs;
-    for (int i = 0; i < top_k; ++i) {
-        float prob = std::exp(logits[indices[i]] - max_logit);
-        top_k_probs.push_back(prob);
-        sum_exp += prob;
-    }
+    std::vector<AudioClassResult> results;
+    if (!raw_results.empty() && !raw_results[0].empty()) {
+        const auto& batch_res = raw_results[0]; // Batch size 1
+        results.reserve(batch_res.size());
 
-    std::vector<AudioClassificationResult> results;
-    for (int i = 0; i < top_k; ++i) {
-        int class_id = indices[i];
-        float confidence = top_k_probs[i] / sum_exp;
-        std::string label = pimpl_->class_labels_.empty() || class_id >= pimpl_->class_labels_.size() ?
-                            "Class " + std::to_string(class_id) :
-                            pimpl_->class_labels_[class_id];
-        results.push_back({class_id, confidence, label});
+        for (const auto& item : batch_res) {
+            if (item.score >= pimpl_->config_.confidence_threshold) {
+                AudioClassResult res;
+                res.id = item.id;
+                res.confidence = item.score;
+                res.label = item.label;
+                results.push_back(res);
+            }
+        }
     }
 
     return results;
 }
 
-} // namespace xinfer::zoo::audio```
+} // namespace xinfer::zoo::audio

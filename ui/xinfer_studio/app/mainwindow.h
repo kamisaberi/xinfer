@@ -26,4 +26,5 @@ private:
     // Threading
     QThread* m_workerThread;
     ZooController* m_controller;
+
 };

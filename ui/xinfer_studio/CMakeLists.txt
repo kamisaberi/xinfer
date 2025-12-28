@@ -19,6 +19,7 @@ include_directories(${CMAKE_SOURCE_DIR}/../../include)
 # --- Define Source Files ---
 set(UI_SOURCES
         main.cpp
+        resources.qrc # Add this line
 
         # App
         app/mainwindow.cpp

@@ -250,10 +250,18 @@ int main(int argc, char** argv) {
         ("model", "Compiled engine file for benchmarking", cxxopts::value<std::string>())
         ("iterations", "Number of runs", cxxopts::value<int>()->default_value("100"))
         ("warmup", "Number of warmup runs", cxxopts::value<int>()->default_value("10"))
-
+        
         // Common
         ("vendor-params", "Extra flags (e.g. CORE=0, DPU_ARCH=x.json)", cxxopts::value<std::vector<std::string>>());
 
+
+    options.add_options("Download")
+        ("download", "Trigger download mode")
+        ("url", "URL of the model to download", cxxopts::value<std::string>())
+        // Re-use 'output' from compile options
+        ("sha256", "Optional SHA256 checksum for verification", cxxopts::value<std::string>());
+
+        
     try {
         auto result = options.parse(argc, argv);
 
@@ -261,6 +269,13 @@ int main(int argc, char** argv) {
             std::cout << options.help() << std::endl;
             return 0;
         }
+
+        // --- Update your main logic ---
+        if (result.count("download")) {
+            handle_download(result);
+        } else if (mode == "compile") {
+            // ...
+        } // ...
 
         std::string mode = result["mode"].as<std::string>();
 

@@ -1,36 +1,66 @@
 #pragma once
 
-
 #include <string>
 #include <vector>
 #include <memory>
-#include <include/preproc/audio_processor.h>
+#include <map>
+
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::audio {
 
-    struct AudioClassificationResult {
-        int class_id;
-        float confidence;
+    struct AudioClassResult {
+        int id;
         std::string label;
+        float confidence;
     };
 
-    struct ClassifierConfig {
-        std::string engine_path;
-        std::string labels_path = "";
-        preproc::AudioProcessorConfig audio_config;
+    struct AudioClassifierConfig {
+        // Hardware Target (CPU/NPU usually sufficient for audio)
+        xinfer::Target target = xinfer::Target::INTEL_OV;
+
+        // Model Path (e.g., yamnet.onnx, panns_cnn.rknn)
+        std::string model_path;
+
+        // Label map (Class ID -> Event Name)
+        std::string labels_path;
+
+        // --- Audio Preprocessing ---
+        int sample_rate = 16000;
+        float duration_sec = 2.0f; // Model expects fixed-length input
+
+        // Spectrogram settings (must match training)
+        int n_fft = 1024;
+        int hop_length = 320;
+        int n_mels = 64;
+
+        // --- Post-processing ---
+        int top_k = 3;
+        float confidence_threshold = 0.3f;
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class Classifier {
     public:
-        explicit Classifier(const ClassifierConfig& config);
+        explicit Classifier(const AudioClassifierConfig& config);
         ~Classifier();
 
-        Classifier(const Classifier&) = delete;
-        Classifier& operator=(const Classifier&) = delete;
+        // Move semantics
         Classifier(Classifier&&) noexcept;
         Classifier& operator=(Classifier&&) noexcept;
+        Classifier(const Classifier&) = delete;
+        Classifier& operator=(const Classifier&) = delete;
 
-        std::vector<AudioClassificationResult> predict(const std::vector<float>& waveform, int top_k = 5);
+        /**
+         * @brief Classify an audio clip.
+         *
+         * @param pcm_data Raw float audio samples (normalized [-1, 1]).
+         * @return List of top_k predicted classes.
+         */
+        std::vector<AudioClassResult> classify(const std::vector<float>& pcm_data);
 
     private:
         struct Impl;
@@ -38,4 +68,3 @@ namespace xinfer::zoo::audio {
     };
 
 } // namespace xinfer::zoo::audio
-

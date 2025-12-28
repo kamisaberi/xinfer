@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Find our main `xinfer` library, which this tool depends on.
 # This assumes you have already built and installed `xinfer`.
 find_package(xinfer REQUIRED)
+
+
+
 if(NOT xinfer_FOUND)
     message(FATAL_ERROR "Could not find xinfer library. Please build and install it first.")
 endif()

@@ -1,146 +1,113 @@
-cmake_minimum_required(VERSION 3.28)
-# THE FIX: Add the VERSION number here. This is required for the install rules.
-project(xinfer VERSION 1.0.0 LANGUAGES CXX CUDA)
+cmake_minimum_required(VERSION 3.20)
+project(xInfer LANGUAGES CXX CUDA C OBJCXX) # Enable languages for all platforms
 
-set(CMAKE_CUDA_ARCHITECTURES "75;86")
-set(CMAKE_CUDA_COMPILER /usr/local/cuda-12.8/bin/nvcc)
-
+# ==============================================================================
+# 1. Project-wide Settings
+# ==============================================================================
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_CUDA_STANDARD 17)
-set(CMAKE_CUDA_STANDARD_REQUIRED True)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Enable position-independent code (required for shared libraries)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# ===================================================================
-# 1. FIND DEPENDENCIES (Your original code, unchanged)
-# ===================================================================
-list(APPEND CMAKE_PREFIX_PATH  /home/kami/libs/cpp/TensorRT-10.13.2.6/)
-find_path(TENSORRT_INCLUDE_DIR NvInfer.h HINTS /usr/include/x86_64-linux-gnu/)
-find_library(TENSORRT_LIBRARY nvinfer HINTS /usr/lib/x86_64-linux-gnu/)
-find_library(TENSORRT_PARSER_LIBRARY nvinfer_plugin HINTS /usr/lib/x86_64-linux-gnu/)
-find_library(TENSORRT_ONNX_PARSER_LIBRARY nvonnxparser HINTS /usr/lib/x86_64-linux-gnu/)
-if (NOT TENSORRT_INCLUDE_DIR OR NOT TENSORRT_LIBRARY)
-    message(FATAL_ERROR "TensorRT not found. Please set TENSORRT_ROOT or check paths.")
+# Set default build type if not specified
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
 endif()
-message(STATUS "Found TensorRT headers: ${TENSORRT_INCLUDE_DIR}")
-message(STATUS "Found TensorRT library: ${TENSORRT_LIBRARY}")
 
-find_package(xTorch REQUIRED)
-if(xTorch_FOUND)
-    message(STATUS "xTorch config directory found at: ${xTorch_DIR}")
-    get_filename_component(XTORCH_INSTALL_DIR "${xTorch_DIR}" DIRECTORY)
-    get_filename_component(XTORCH_INSTALL_DIR "${XTORCH_INSTALL_DIR}" DIRECTORY)
-    get_filename_component(XTORCH_INSTALL_DIR "${XTORCH_INSTALL_DIR}" DIRECTORY)
-    message(STATUS "Deduced xTorch installation root: ${XTORCH_INSTALL_DIR}")
-    set(BUNDLED_LIBTORCH_PATH "${XTORCH_INSTALL_DIR}/include/xtorch/third_party/libtorch")
-    if(EXISTS "${BUNDLED_LIBTORCH_PATH}")
-        message(STATUS "Found bundled libtorch at: ${BUNDLED_LIBTORCH_PATH}")
-        list(PREPEND CMAKE_PREFIX_PATH ${BUNDLED_LIBTORCH_PATH})
-    else()
-        message(FATAL_ERROR "Could not find the bundled libtorch directory at the expected path: ${BUNDLED_LIBTORCH_PATH}")
-    endif()
-    set(BUNDLED_ONNXRUNTIME_PATH "${XTORCH_INSTALL_DIR}/include/xtorch/third_party/onnxruntime")
-    set(BUNDLED_ONNXRUNTIME_INCLUDE_DIR "${BUNDLED_ONNXRUNTIME_PATH}/include")
-    set(BUNDLED_ONNXRUNTIME_LIB_DIR "${BUNDLED_ONNXRUNTIME_PATH}/lib")
-endif()
-find_package(Torch REQUIRED)
-find_package(LibLZMA REQUIRED)
-find_package(LibArchive REQUIRED)
-find_package(OpenSSL REQUIRED)
-find_package(CURL REQUIRED)
+# ==============================================================================
+# 2. Build Options (User can toggle these with -D)
+# ==============================================================================
+option(XINFER_ENABLE_TRT "Enable NVIDIA TensorRT Backend" OFF)
+option(XINFER_ENABLE_VITIS "Enable AMD/Xilinx Vitis Backend" OFF)
+option(XINFER_ENABLE_RKNN "Enable Rockchip RKNN Backend" OFF)
+option(XINFER_ENABLE_QNN "Enable Qualcomm QNN Backend" OFF)
+option(XINFER_ENABLE_OPENVINO "Enable Intel OpenVINO Backend" ON)
+option(XINFER_ENABLE_COREML "Enable Apple CoreML Backend" ${APPLE})
+# ... Add options for all 15 backends ...
+
+option(XINFER_BUILD_EXAMPLES "Build the example applications" ON)
+option(XINFER_BUILD_TOOLS "Build the xinfer-cli tool" ON)
+
+# ==============================================================================
+# 3. Find External Dependencies
+# ==============================================================================
+find_package(Threads REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(ZLIB REQUIRED)
-find_package(SndFile REQUIRED)
+find_package(CURL REQUIRED) # For the downloader
 
-include_directories(SYSTEM ${CMAKE_SOURCE_DIR} /usr/include /usr/local/include ${TENSORRT_INCLUDE_DIR} ${BUNDLED_ONNXRUNTIME_INCLUDE_DIR})
+if(XINFER_ENABLE_TRT)
+    find_package(CUDAToolkit REQUIRED)
+    # Logic to find TensorRT would go here, often via environment variables
+    # (Simplified for this example)
+endif()
 
+# ==============================================================================
+# 4. Include Source Directories
+# ==============================================================================
+# This is where we build our modular components
 
-# ===================================================================
-# 2. DEFINE THE `xinfer` LIBRARY
-# ===================================================================
+# --- Core Library ---
+# The foundation: Tensor, Logging, DeviceManager
+add_subdirectory(src/core)
 
-# Automatically find all library source files from the src/ directory
-file(GLOB_RECURSE XINFER_SOURCES "src/*.cpp" "src/*.cu")
+# --- Utilities ---
+add_subdirectory(src/utils) # For Downloader
 
-# Define `xinfer` as a SHARED library from these source files
-add_library(xinfer SHARED ${XINFER_SOURCES})
+# --- Backends ---
+# This directory will contain CMake files for each of the 15 runtime backends
+add_subdirectory(src/backends)
 
-# Set properties for the library
-set_property(TARGET xinfer PROPERTY CXX_STANDARD ${CMAKE_CXX_STANDARD})
-set_property(TARGET xinfer PROPERTY CUDA_STANDARD ${CMAKE_CUDA_STANDARD})
-set_property(TARGET xinfer PROPERTY POSITION_INDEPENDENT_CODE ON)
+# --- Preprocessing ---
+# This builds the preproc library with conditional CUDA/RGA/NEON support
+add_subdirectory(src/preproc)
 
-# Tell the library where to find its own public headers and the headers of its dependencies
-target_include_directories(xinfer PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-        ${TENSORRT_INCLUDE_DIR}
-        ${TORCH_INCLUDE_DIRS}
-        ${OpenCV_INCLUDE_DIRS}
-        ${xTorch_INCLUDE_DIRS}
-        # Add other include dirs from your TEST_LIBRARIES if needed
+# --- Post-processing ---
+# This builds the postproc library with conditional CUDA/CPU support
+add_subdirectory(src/postproc)
+
+# --- Compiler ---
+# This builds the compiler driver library
+add_subdirectory(src/compiler)
+
+# --- Model Zoo ---
+# This builds the high-level application modules
+add_subdirectory(src/zoo)
+
+# ==============================================================================
+# 5. Build Tools & Examples (if enabled)
+# ==============================================================================
+
+if(XINFER_BUILD_TOOLS)
+    add_subdirectory(tools)
+endif()
+
+if(XINFER_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
+
+# ==============================================================================
+# 6. Final Library Aggregation (Optional but good practice)
+# ==============================================================================
+# You can create a single 'xinfer' INTERFACE library that bundles all public
+# headers and links all components for easy consumption by other projects.
+
+add_library(xinfer INTERFACE)
+target_include_directories(xinfer INTERFACE
+    ${PROJECT_SOURCE_DIR}/include
 )
 
-# Link the library to all of its dependencies
-target_link_libraries(xinfer PUBLIC
-        xTorch::xTorch
-        ${TORCH_LIBRARIES}
-        ${OpenCV_LIBS}
-        ${TENSORRT_LIBRARY}
-        ${TENSORRT_PARSER_LIBRARY}
-        ${TENSORRT_ONNX_PARSER_LIBRARY}
-        # Add other libraries like OpenSSL::SSL etc. if needed
+target_link_libraries(xinfer INTERFACE
+    xinfer_core
+    xinfer_utils
+    xinfer_backends # This is an object library that needs to be linked into a final target
+    xinfer_preproc
+    xinfer_postproc
+    xinfer_zoo
+    
+    # Propagate public dependencies
+    ${OpenCV_LIBS}
+    ${CURL_LIBRARIES}
+    Threads::Threads
 )
-
-
-# ===================================================================
-# 3. DEFINE THE `xinfer_example` EXECUTABLE
-# ===================================================================
-
-# This target is built from main.cpp only
-add_executable(xinfer_example main.cpp)
-
-# Link the example against your new `xinfer` library.
-# CMake handles all the includes and library paths automatically.
-target_link_libraries(xinfer_example PRIVATE xinfer)
-
-
-# ===================================================================
-# 4. INSTALLATION RULES (As requested)
-# ===================================================================
-
-include(GNUInstallDirs)
-
-# Rule to install the library target
-install(TARGETS xinfer
-        EXPORT xinfer-targets
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
-# Rule to install the public headers
-install(DIRECTORY include/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
-
-# Rule to generate and install the CMake config files for `find_package(xinfer)`
-install(EXPORT xinfer-targets
-        FILE xinfer-config.cmake
-        NAMESPACE xinfer::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xinfer
-)
-
-include(CMakePackageConfigHelpers)
-write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/xinfer-config-version.cmake"
-        VERSION ${PROJECT_VERSION} # This now works because of the fix in the project() line
-        COMPATIBILITY AnyNewerVersion
-)
-install(FILES
-        "${CMAKE_CURRENT_BINARY_DIR}/xinfer-config-version.cmake"
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xinfer
-)
-
-
-#add_subdirectory(tools/xinfer-cli)

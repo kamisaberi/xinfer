@@ -1,8 +1,19 @@
-//
-// Created by kami on 12/29/2025.
-//
+#pragma once
+#include <QWidget>
+#include <QImage>
+#include <QPainter>
 
-#ifndef XINFER_VIDEO_WIDGET_H
-#define XINFER_VIDEO_WIDGET_H
+class VideoDisplay : public QWidget {
+    Q_OBJECT
+public:
+    explicit VideoDisplay(QWidget *parent = nullptr);
 
-#endif //XINFER_VIDEO_WIDGET_H
+public slots:
+    void updateFrame(const QImage& image);
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    QImage m_currentFrame;
+};

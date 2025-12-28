@@ -1,8 +1,10 @@
-//
-// Created by kami on 12/29/2025.
-//
+#pragma once
+#include <QImage>
+#include <opencv2/opencv.hpp>
 
-#ifndef XINFER_QT_CV_CONVERTER_H
-#define XINFER_QT_CV_CONVERTER_H
-
-#endif //XINFER_QT_CV_CONVERTER_H
+namespace xinfer::ui::helpers {
+    /**
+     * @brief Converts cv::Mat to QImage efficiently (zero-copy if possible).
+     */
+    QImage mat_to_qimage(const cv::Mat& mat);
+}

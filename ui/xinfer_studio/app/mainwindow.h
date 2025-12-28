@@ -1,8 +1,29 @@
-//
-// Created by kami on 12/29/2025.
-//
+#pragma once
+#include <QMainWindow>
+#include <QThread>
+#include "../controllers/zoo_controller.h"
 
-#ifndef XINFER_MAINWINDOW_H
-#define XINFER_MAINWINDOW_H
+QT_BEGIN_NAMESPACE
+namespace Ui { class MainWindow; }
+QT_END_NAMESPACE
 
-#endif //XINFER_MAINWINDOW_H
+class MainWindow : public QMainWindow {
+    Q_OBJECT
+
+public:
+    MainWindow(QWidget *parent = nullptr);
+    ~MainWindow();
+
+private slots:
+    void on_btnStart_clicked();
+    void on_btnStop_clicked();
+    void updateView(const QImage& image);
+    void handleError(QString msg);
+
+private:
+    Ui::MainWindow *ui;
+
+    // Threading
+    QThread* m_workerThread;
+    ZooController* m_controller;
+};

@@ -3,19 +3,35 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <include/preproc/audio_processor.h>
+#include <map>
+
+// Include Target enum
+#include <xinfer/compiler/base_compiler.h>
 
 namespace xinfer::zoo::audio {
 
-    struct TranscriptionResult {
-        std::string text;
-        float confidence;
-    };
-
     struct SpeechRecognizerConfig {
-        std::string engine_path;
-        std::string character_map_path;
-        preproc::AudioProcessorConfig audio_config;
+        // Hardware Target (CPU is fine for single stream, NPU/GPU for batch)
+        xinfer::Target target = xinfer::Target::INTEL_OV;
+
+        // Model Path (e.g., quartznet.onnx)
+        std::string model_path;
+
+        // --- Audio Preprocessing ---
+        int sample_rate = 16000;
+
+        // Spectrogram settings
+        int n_fft = 512;
+        int hop_length = 160;
+        int n_mels = 64;
+
+        // --- CTC Decoder ---
+        // Character map. e.g., "_' abcdefghijklmnopqrstuvwxyz"
+        std::string vocabulary;
+        int blank_index = 28; // Usually last char
+
+        // Vendor flags
+        std::vector<std::string> vendor_params;
     };
 
     class SpeechRecognizer {
@@ -23,12 +39,26 @@ namespace xinfer::zoo::audio {
         explicit SpeechRecognizer(const SpeechRecognizerConfig& config);
         ~SpeechRecognizer();
 
-        SpeechRecognizer(const SpeechRecognizer&) = delete;
-        SpeechRecognizer& operator=(const SpeechRecognizer&) = delete;
+        // Move semantics
         SpeechRecognizer(SpeechRecognizer&&) noexcept;
         SpeechRecognizer& operator=(SpeechRecognizer&&) noexcept;
+        SpeechRecognizer(const SpeechRecognizer&) = delete;
+        SpeechRecognizer& operator=(const SpeechRecognizer&) = delete;
 
-        TranscriptionResult predict(const std::vector<float>& waveform);
+        /**
+         * @brief Transcribe a full audio clip.
+         *
+         * @param pcm_data Raw float audio samples (normalized [-1, 1]).
+         * @return The transcribed text for each batch item (usually one).
+         */
+        std::vector<std::string> recognize(const std::vector<float>& pcm_data);
+
+        /**
+         * @brief Transcribe a batch of audio clips.
+         * @note Requires model to support batching. All clips should be padded
+         *       to the same length.
+         */
+        std::vector<std::string> recognize_batch(const std::vector<std::vector<float>>& pcm_batch);
 
     private:
         struct Impl;
@@ -36,4 +66,3 @@ namespace xinfer::zoo::audio {
     };
 
 } // namespace xinfer::zoo::audio
-

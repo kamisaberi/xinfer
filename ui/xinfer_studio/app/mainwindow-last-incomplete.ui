@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+    <class>MainWindow</class>
+    <widget class="QMainWindow" name="MainWindow">
+        <property name="geometry">
+            <rect>
+                <x>0</x>
+                <y>0</y>
+                <width>1280</width>
+                <height>800</height>
+            </rect>
+        </property>
+        <property name="windowTitle">
+            <string>xInfer Studio</string>
+        </property>
+        <property name="styleSheet">
+            <string notr="true">/* Base style is handled by dark_theme.qss, specific overrides here if needed */</string>
+        </property>
+
+        <widget class="QWidget" name="centralwidget">
+            <layout class="QVBoxLayout" name="verticalLayout">
+                <property name="leftMargin">
+                    <number>0</number>
+                </property>
+                <property name="topMargin">
+                    <number>5</number>
+                </property>
+                <property name="rightMargin">
+                    <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                    <number>0</number>
+                </property>
+                <item>
+                    <widget class="QTabWidget" name="mainTabWidget">
+                        <property name="currentIndex">
+                            <number>0</number>
+                        </property>
+                        <property name="iconSize">
+                            <size>
+                                <width>24</width>
+                                <height>24</height>
+                            </size>
+                        </property>
+                        <widget class="QWidget" name="tab_placeholder1">
+                            <attribute name="title">
+                                <string>Loading...</string>
+                            </attribute>
+                        </widget>
+                    </widget>
+                </item>
+            </layout>
+        </widget>
+
+        <widget class="QMenuBar" name="menubar">
+            <property name="geometry">
+                <rect>
+                    <x>0</x>
+                    <y>0</y>
+                    <width>1280</width>
+                    <height>22</height>
+                </rect>
+            </property>
+            <widget class="QMenu" name="menuFile">
+                <property name="title">
+                    <string>File</string>
+                </property>
+                <addaction name="actionExit"/>
+            </widget>
+            <widget class="QMenu" name="menuTools">
+                <property name="title">
+                    <string>Tools</string>
+                </property>
+                <addaction name="actionDevice_Manager"/>
+                <addaction name="separator"/>
+                <addaction name="actionSettings"/>
+            </widget>
+            <widget class="QMenu" name="menuHelp">
+                <property name="title">
+                    <string>Help</string>
+                </property>
+                <addaction name="actionAbout"/>
+            </widget>
+            <addaction name="menuFile"/>
+            <addaction name="menuTools"/>
+            <addaction name="menuHelp"/>
+        </widget>
+
+        <widget class="QStatusBar" name="statusbar"/>
+
+        <action name="actionExit">
+            <property name="text">
+                <string>Exit</string>
+            </property>
+            <property name="shortcut">
+                <string>Ctrl+Q</string>
+            </property>
+        </action>
+        <action name="actionDevice_Manager">
+            <property name="text">
+                <string>Device Manager...</string>
+            </property>
+            <property name="shortcut">
+                <string>Ctrl+D</string>
+            </property>
+        </action>
+        <action name="actionSettings">
+            <property name="text">
+                <string>Settings...</string>
+            </property>
+        </action>
+        <action name="actionAbout">
+            <property name="text">
+                <string>About</string>
+            </property>
+        </action>
+    </widget>
+    <resources/>
+    <connections/>
+</ui>

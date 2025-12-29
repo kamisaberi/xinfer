@@ -1,8 +1,27 @@
-//
-// Created by kami on 12/29/2025.
-//
+#pragma once
 
-#ifndef XINFER_RESULTS_TABLE_H
-#define XINFER_RESULTS_TABLE_H
+#include <QWidget>
+#include <QTreeWidget>
+#include <vector>
 
-#endif //XINFER_RESULTS_TABLE_H
+// Include types to display
+#include <xinfer/postproc/vision/types.h>
+
+class ResultsPanel : public QWidget {
+    Q_OBJECT
+public:
+    explicit ResultsPanel(QWidget *parent = nullptr);
+
+    // Clear the table
+    void clear();
+
+    // Update with new detections
+    void updateDetections(const std::vector<xinfer::postproc::BoundingBox>& boxes);
+
+    // Update with classification results
+    // void updateClassifications(...)
+
+private:
+    QTreeWidget* m_tree;
+    void setupUI();
+};

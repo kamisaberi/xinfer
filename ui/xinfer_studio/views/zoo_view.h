@@ -1,8 +1,34 @@
-//
-// Created by kami on 12/29/2025.
-//
+#pragma once
 
-#ifndef XINFER_ZOO_VIEW_H
-#define XINFER_ZOO_VIEW_H
+#include <QWidget>
+#include <QThread>
+#include "../controllers/zoo_controller.h"
+#include "../widgets/video_display.h"
+#include "../widgets/results_panel.h"
 
-#endif //XINFER_ZOO_VIEW_H
+namespace Ui { class ZooView; }
+
+class ZooView : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit ZooView(QWidget *parent = nullptr);
+    ~ZooView();
+
+private slots:
+    void on_btnStart_clicked();
+    void on_btnStop_clicked();
+
+    // Updates from Controller
+    void onFrameReady(const QImage& img);
+    // In a real app, you'd emit results from controller too:
+    // void onResultsReady(const std::vector<BoundingBox>& boxes);
+
+private:
+    Ui::ZooView *ui;
+
+    QThread* m_workerThread;
+    ZooController* m_controller;
+
+    void setupThread();
+};

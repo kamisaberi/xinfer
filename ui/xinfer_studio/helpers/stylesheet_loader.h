@@ -1,21 +1,18 @@
 #pragma once
-#include <QApplication>
-#include <QFile>
-#include <QTextStream>
-#include <QDebug>
+
+#include <QString>
+
+// Forward declaration to avoid heavy includes in the header
+class QApplication;
 
 namespace xinfer::ui::helpers {
 
-    inline void apply_theme(QApplication& app, const QString& resourcePath) {
-        QFile file(resourcePath);
-        if (file.open(QFile::ReadOnly | QFile::Text)) {
-            QTextStream stream(&file);
-            app.setStyleSheet(stream.readAll());
-            file.close();
-            qInfo() << "Loaded theme:" << resourcePath;
-        } else {
-            qWarning() << "Failed to load theme:" << resourcePath;
-        }
-    }
+    /**
+     * @brief Loads a QSS file and applies it to the application.
+     *
+     * @param app Reference to the main QApplication instance.
+     * @param resourcePath Path to the .qss file (e.g., ":/styles/dark_theme.qss").
+     */
+    void apply_theme(QApplication& app, const QString& resourcePath);
 
-}
+} // namespace xinfer::ui::helpers

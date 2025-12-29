@@ -1,9 +1,3 @@
-Here is the definitive, "Powerhouse" **README.md** for `xInfer`.
-
-It emphasizes the industrial scale of the project, the unified architecture, and includes the requested **detailed breakdown of all 15 supported platforms**.
-
-***
-
 # xInfer: The Universal High-Performance AI Runtime
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

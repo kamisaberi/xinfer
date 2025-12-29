@@ -1,8 +1,21 @@
-//
-// Created by kami on 12/29/2025.
-//
+#pragma once
+#include <QApplication>
+#include <QFile>
+#include <QTextStream>
+#include <QDebug>
 
-#ifndef XINFER_STYLESHEET_LOADER_H
-#define XINFER_STYLESHEET_LOADER_H
+namespace xinfer::ui::helpers {
 
-#endif //XINFER_STYLESHEET_LOADER_H
+    inline void apply_theme(QApplication& app, const QString& resourcePath) {
+        QFile file(resourcePath);
+        if (file.open(QFile::ReadOnly | QFile::Text)) {
+            QTextStream stream(&file);
+            app.setStyleSheet(stream.readAll());
+            file.close();
+            qInfo() << "Loaded theme:" << resourcePath;
+        } else {
+            qWarning() << "Failed to load theme:" << resourcePath;
+        }
+    }
+
+}

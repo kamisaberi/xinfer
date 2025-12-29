@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+    <class>ResultsPanel</class>
+    <widget class="QWidget" name="ResultsPanel">
+        <property name="geometry">
+            <rect>
+                <x>0</x>
+                <y>0</y>
+                <width>300</width>
+                <height>600</height>
+            </rect>
+        </property>
+        <layout class="QVBoxLayout" name="verticalLayout">
+            <property name="spacing">
+                <number>0</number>
+            </property>
+            <property name="leftMargin">
+                <number>0</number>
+            </property>
+            <property name="topMargin">
+                <number>0</number>
+            </property>
+            <property name="rightMargin">
+                <number>0</number>
+            </property>
+            <property name="bottomMargin">
+                <number>0</number>
+            </property>
+            <item>
+                <widget class="QGroupBox" name="groupBox">
+                    <property name="title">
+                        <string>Detection Results</string>
+                    </property>
+                    <layout class="QVBoxLayout" name="verticalLayout_2">
+                        <property name="leftMargin">
+                            <number>5</number>
+                        </property>
+                        <property name="topMargin">
+                            <number>5</number>
+                        </property>
+                        <property name="rightMargin">
+                            <number>5</number>
+                        </property>
+                        <property name="bottomMargin">
+                            <number>5</number>
+                        </property>
+                        <item>
+                            <widget class="QTreeWidget" name="treeWidget">
+                                <property name="styleSheet">
+                                    <string notr="true">QTreeWidget {
+                                        background-color: #1e1e1e;
+                                        border: 1px solid #444;
+                                        color: #e0e0e0;
+                                        font-family: &quot;Segoe UI&quot;, sans-serif;
+                                        }
+                                        QHeaderView::section {
+                                        background-color: #333;
+                                        color: white;
+                                        padding: 4px;
+                                        border: none;
+                                        border-right: 1px solid #444;
+                                        }</string>
+                                </property>
+                                <property name="alternatingRowColors">
+                                    <bool>true</bool>
+                                </property>
+                                <property name="rootIsDecorated">
+                                    <bool>false</bool>
+                                </property>
+                                <property name="itemsExpandable">
+                                    <bool>false</bool>
+                                </property>
+                                <attribute name="headerStretchLastSection">
+                                    <bool>true</bool>
+                                </attribute>
+                                <column>
+                                    <property name="text">
+                                        <string>Class</string>
+                                    </property>
+                                </column>
+                                <column>
+                                    <property name="text">
+                                        <string>Conf</string>
+                                    </property>
+                                </column>
+                                <column>
+                                    <property name="text">
+                                        <string>Location</string>
+                                    </property>
+                                </column>
+                            </widget>
+                        </item>
+                    </layout>
+                </widget>
+            </item>
+        </layout>
+    </widget>
+    <resources/>
+    <connections/>
+</ui>

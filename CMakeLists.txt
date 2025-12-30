@@ -30,6 +30,12 @@ option(XINFER_ENABLE_COREML "Enable Apple CoreML Backend" ${APPLE})
 option(XINFER_BUILD_EXAMPLES "Build the example applications" ON)
 option(XINFER_BUILD_TOOLS "Build the xinfer-cli tool" ON)
 
+
+option(XINFER_BUILD_SERVING   "Build HTTP/REST Model Server"  ON)
+option(XINFER_BUILD_FLOW      "Build Pipeline Orchestrator"   ON)
+option(XINFER_BUILD_TELEMETRY "Build Observability System"    ON)
+
+
 # ==============================================================================
 # 3. Find External Dependencies
 # ==============================================================================
@@ -42,6 +48,8 @@ if(XINFER_ENABLE_TRT)
     # Logic to find TensorRT would go here, often via environment variables
     # (Simplified for this example)
 endif()
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
 # ==============================================================================
 # 4. Include Source Directories
@@ -85,6 +93,22 @@ endif()
 
 if(XINFER_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+
+if(XINFER_BUILD_SERVING)
+    message(STATUS "[xInfer] Enabling Serving Module")
+    add_subdirectory(src/serving)
+endif()
+
+if(XINFER_BUILD_FLOW)
+    message(STATUS "[xInfer] Enabling Flow Module")
+    add_subdirectory(src/flow)
+endif()
+
+if(XINFER_BUILD_TELEMETRY)
+    message(STATUS "[xInfer] Enabling Telemetry Module")
+    add_subdirectory(src/telemetry)
 endif()
 
 # ==============================================================================

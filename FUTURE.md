@@ -272,3 +272,109 @@ With **Serving**, **Flow**, and **Telemetry**, `xInfer` becomes a full-stack AI 
 *   **Telemetry:** Ensures reliability in mission-critical deployments.
 
 If you are a solo developer or a small team, I recommend focusing on **`xinfer::serving`** first. It provides the highest immediate value by allowing you to decouple the C++ inference engine from your frontend applications (Dashboards, Mobile Apps).
+
+
+
+
+# STRUCTURE 
+
+
+
+Here is the complete file structure for the three new enterprise modules: **Serving**, **Flow**, and **Telemetry**.
+
+This structure follows your established pattern: public headers in `include/` and implementation details in `src/`.
+
+### 📂 Full File Structure
+
+```text
+xinfer/
+├── include/xinfer/
+│   ├── serving/                    # [NEW] Model Server (Microservices)
+│   │   ├── server.h                # Main Server Class
+│   │   ├── types.h                 # Request/Response structs, Status codes
+│   │   └── model_repository.h      # Interface for dynamic model loading
+│   │
+│   ├── flow/                       # [NEW] Pipeline Orchestrator (Low-Code)
+│   │   ├── pipeline.h              # Main Graph Executor
+│   │   ├── node_interface.h        # Base class for all pipeline nodes
+│   │   └── types.h                 # JSON config structs, Edge definitions
+│   │
+│   └── telemetry/                  # [NEW] Observability & Monitoring
+│       ├── monitor.h               # System metrics (FPS, Latency, RAM/VRAM)
+│       ├── drift_detector.h        # Statistical monitoring (Concept Drift)
+│       └── types.h                 # Metric structs
+│
+├── src/
+│   ├── serving/
+│   │   ├── CMakeLists.txt
+│   │   ├── server.cpp              # Implementation of HTTP/REST logic
+│   │   ├── model_repository.cpp    # Logic to map URL slugs to Backends
+│   │   └── http/                   # Internal HTTP handling
+│   │       ├── request_handler.h
+│   │       ├── request_handler.cpp
+│   │       └── router.cpp          # URL Routing logic
+│   │
+│   ├── flow/
+│   │   ├── CMakeLists.txt
+│   │   ├── pipeline.cpp            # Graph topological sort & execution loop
+│   │   ├── parser.cpp              # JSON/YAML parsing logic
+│   │   └── nodes/                  # Concrete Node Implementations
+│   │       ├── source_nodes.cpp    # CameraSource, FileSource, RtspSource
+│   │       ├── infer_nodes.cpp     # ZooModelNode, GenericModelNode
+│   │       ├── process_nodes.cpp   # CropNode, ResizeNode, FilterNode
+│   │       └── sink_nodes.cpp      # FileSink, ScreenSink, MqttSink
+│   │
+│   └── telemetry/
+│       ├── CMakeLists.txt
+│       ├── monitor.cpp             # Hardware polling logic
+│       ├── drift_detector.cpp      # KS-Test / Z-Score logic
+│       └── exporters/              # Internal logic to export data
+│           ├── json_exporter.cpp   # Log to file
+│           └── prometheus_exporter.cpp # (Optional) Scrape endpoint
+```
+
+---
+
+### Detailed Breakdown of Responsibilities
+
+#### 1. `src/serving` (The API Layer)
+*   **`server.cpp`**: Uses a lightweight pool of threads to listen on a port (e.g., 8080).
+*   **`model_repository.cpp`**: Manages a map of `std::string model_name` $\to$ `std::unique_ptr<IBackend>`. It handles hot-swapping models without restarting the server.
+*   **`request_handler.cpp`**: Parses incoming JSON payload (`{"inputs": [...]}`), converts it to `core::Tensor`, runs inference, and serializes the result back to JSON.
+
+#### 2. `src/flow` (The Logic Layer)
+*   **`pipeline.cpp`**: The engine that runs the graph. It passes `std::map<string, std::any>` data between nodes. It handles synchronization (ensuring Node B waits for Node A).
+*   **`nodes/*.cpp`**: Wrappers around your existing `zoo`, `preproc`, and `postproc` classes so they can be instantiated from a configuration file.
+    *   *Example:* `InferNode` wraps `xinfer::backends::IBackend`.
+    *   *Example:* `SourceNode` wraps `cv::VideoCapture`.
+
+#### 3. `src/telemetry` (The Health Layer)
+*   **`monitor.cpp`**: A background thread that wakes up every N seconds to check `get_inference_time()`, CPU usage, and GPU temperature (via NVML or sysfs).
+*   **`drift_detector.cpp`**: Keeps a rolling window of input statistics (mean/std). If the live mean deviates too far from the training mean (defined in config), it raises a flag.
+
+---
+
+### Updated Root `CMakeLists.txt` Integration
+
+You will need to add these lines to your root `CMakeLists.txt` to include the new modules:
+
+```cmake
+# ... existing includes ...
+
+# New Enterprise Modules
+option(XINFER_BUILD_SERVING "Build Model Server" ON)
+option(XINFER_BUILD_FLOW "Build Pipeline Orchestrator" ON)
+option(XINFER_BUILD_TELEMETRY "Build Telemetry System" ON)
+
+if(XINFER_BUILD_SERVING)
+    add_subdirectory(src/serving)
+endif()
+
+if(XINFER_BUILD_FLOW)
+    add_subdirectory(src/flow)
+endif()
+
+if(XINFER_BUILD_TELEMETRY)
+    add_subdirectory(src/telemetry)
+endif()
+```

@@ -1,0 +1,51 @@
+{
+  "name": "siem_network_anomaly",
+  "version": "1.0",
+  "description": "High-throughput log analysis for intrusion detection",
+  "nodes": [
+    {
+      "id": "log_source",
+      "type": "FileSource",
+      "params": {
+        "path": "/var/log/firewall_traffic.csv",
+        "format": "csv",
+        "batch_size": "1000",
+        "loop": "true"
+      }
+    },
+    {
+      "id": "feature_extractor",
+      "type": "TabularPreproc",
+      "params": {
+        "schema": "./configs/schema/network_schema.json",
+        "target": "rockchip-rknn",
+        "parse_ips": "true",
+        "impute_missing": "true"
+      }
+    },
+    {
+      "id": "autoencoder",
+      "type": "AnomalyDetector",
+      "params": {
+        "model": "./models/siem_ae.rknn",
+        "target": "rockchip-rknn",
+        "threshold": "0.75",
+        "method": "reconstruction_error"
+      }
+    },
+    {
+      "id": "alert_logger",
+      "type": "FileSink",
+      "params": {
+        "path": "/var/log/xinfer_alerts.json",
+        "trigger_only": "true",
+        "format": "json"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "log_source", "to": "feature_extractor" },
+    { "from": "feature_extractor", "to": "autoencoder" },
+    { "from": "autoencoder", "to": "alert_logger" }
+  ]
+}

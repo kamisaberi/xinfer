@@ -1,0 +1,49 @@
+{
+  "name": "yolo_live_stream",
+  "version": "1.0",
+  "fps_limit": 30,
+  "nodes": [
+    {
+      "id": "cam_source",
+      "type": "CameraSource",
+      "params": {
+        "id": "0",
+        "width": "640",
+        "height": "480",
+        "format": "BGR"
+      }
+    },
+    {
+      "id": "preprocessor",
+      "type": "ImagePreproc",
+      "params": {
+        "target_width": "640",
+        "target_height": "640",
+        "format": "RGB",
+        "device": "auto"
+      }
+    },
+    {
+      "id": "detector",
+      "type": "ObjectDetector",
+      "params": {
+        "model": "./models/yolov8m.engine",
+        "target": "nv-trt",
+        "conf_threshold": "0.5"
+      }
+    },
+    {
+      "id": "screen",
+      "type": "DisplaySink",
+      "params": {
+        "window_name": "xInfer YOLO Demo",
+        "draw_boxes": "true"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "cam_source", "to": "preprocessor" },
+    { "from": "preprocessor", "to": "detector" },
+    { "from": "detector", "to": "screen" }
+  ]
+}

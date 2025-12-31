@@ -1,0 +1,63 @@
+{
+  "name": "aegis_drone_tracking",
+  "version": "2.1-alpha",
+  "description": "Real-time drone detection and tracking pipeline for FPGA",
+  "fps_limit": 0,
+  "nodes": [
+    {
+      "id": "rtsp_input",
+      "type": "RtspSource",
+      "params": {
+        "url": "rtsp://192.168.1.50:8554/drone_feed_hd",
+        "hw_accel": "true",
+        "buffer_size": "2048"
+      }
+    },
+    {
+      "id": "fpga_preproc",
+      "type": "ImagePreproc",
+      "params": {
+        "target_width": "640",
+        "target_height": "640",
+        "format": "RGB",
+        "device": "fpga_pl",
+        "kernel_name": "pp_pipeline_accel"
+      }
+    },
+    {
+      "id": "drone_detector",
+      "type": "ObjectDetector",
+      "params": {
+        "model": "./models/aegis_yolo_tiny.xmodel",
+        "target": "amd-vitis",
+        "vendor_params": "DPU_ARCH=kria_arch.json;NUM_RUNNERS=3"
+      }
+    },
+    {
+      "id": "kalman_tracker",
+      "type": "ObjectTracker",
+      "params": {
+        "algorithm": "SORT",
+        "max_age": "30",
+        "min_hits": "3",
+        "iou_threshold": "0.1"
+      }
+    },
+    {
+      "id": "control_link",
+      "type": "NetworkSink",
+      "params": {
+        "protocol": "UDP",
+        "ip": "10.0.0.5",
+        "port": "9000",
+        "format": "json_telemetry"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "rtsp_input", "to": "fpga_preproc" },
+    { "from": "fpga_preproc", "to": "drone_detector" },
+    { "from": "drone_detector", "to": "kalman_tracker" },
+    { "from": "kalman_tracker", "to": "control_link" }
+  ]
+}

@@ -135,3 +135,19 @@ target_link_libraries(xinfer INTERFACE
     ${CURL_LIBRARIES}
     Threads::Threads
 )
+
+
+# ==============================================================================
+# Post-Build: Copy Configs
+# ==============================================================================
+# This copies the entire 'configs' folder into 'build/configs' automatically
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/configs
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
+
+
+
+
+
+
+message(STATUS "[xInfer] Config files copied to: ${CMAKE_CURRENT_BINARY_DIR}/configs")

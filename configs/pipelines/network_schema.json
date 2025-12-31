@@ -1,0 +1,43 @@
+{
+  "columns": [
+    {
+      "name": "timestamp",
+      "type": "TIMESTAMP",
+      "encoding": "STANDARD_SCALE",
+      "mean": 1670000000.0,
+      "std": 500000.0
+    },
+    {
+      "name": "src_ip",
+      "type": "IP_ADDRESS",
+      "encoding": "IP_SPLIT"
+    },
+    {
+      "name": "dst_ip",
+      "type": "IP_ADDRESS",
+      "encoding": "IP_SPLIT"
+    },
+    {
+      "name": "protocol",
+      "type": "CATEGORICAL",
+      "encoding": "LABEL_ENCODE",
+      "mapping": {
+        "TCP": 0.0,
+        "UDP": 1.0,
+        "ICMP": 2.0
+      },
+      "unknown_val": -1.0
+    },
+    {
+      "name": "bytes_sent",
+      "type": "NUMERICAL",
+      "encoding": "MIN_MAX_SCALE",
+      "min": 0.0,
+      "max": 65535.0
+    },
+    {
+      "name": "status_msg",
+      "type": "IGNORE"
+    }
+  ]
+}

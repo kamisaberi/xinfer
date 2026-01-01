@@ -1,23 +1,19 @@
 # src/flow/CMakeLists.txt
 
-# Find sources
-file(GLOB_RECURSE FLOW_SRCS "*.cpp")
+file(GLOB FLOW_SRCS "*.cpp")
 
-# Create Library
-add_library(xinfer_flow OBJECT ${FLOW_SRCS})
-
-# Dependencies
-target_link_libraries(xinfer_flow PRIVATE
-        xinfer_core
-        xinfer_preproc
-        xinfer_postproc
-        xinfer_zoo       # Flow wraps Zoo modules
-        xinfer_backends  # Direct inference nodes
-        ${OpenCV_LIBS}   # For Source/Sink nodes (Camera/Display)
+# Explicitly list node files to ensure they are picked up
+list(APPEND FLOW_SRCS
+        nodes/source_nodes.cpp
+        nodes/infer_nodes.cpp
+        nodes/sink_nodes.cpp
 )
 
-# Include Paths
-target_include_directories(xinfer_flow PRIVATE
-        ${PROJECT_SOURCE_DIR}/include
-        ${PROJECT_SOURCE_DIR}/third_party # For json.hpp (Config parsing)
+add_library(xinfer_flow OBJECT ${FLOW_SRCS})
+
+# ... (Rest of dependencies remains the same) ...
+target_link_libraries(xinfer_flow PRIVATE
+        xinfer_core
+        xinfer_zoo
+        ${OpenCV_LIBS}
 )

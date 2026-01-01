@@ -7,36 +7,34 @@
 
 namespace xinfer::flow {
 
-    struct PipelineConfig {
-        std::string name;
-        int fps_limit = 0; // 0 = Uncapped
-    };
-
     class Pipeline {
     public:
         Pipeline();
         ~Pipeline();
 
         /**
-         * @brief Load a pipeline from a JSON file.
+         * @brief Load and build a pipeline from a JSON configuration file.
          *
-         * @param json_path Path to pipeline.json
-         * @return true if successful.
+         * @param json_path Path to the pipeline definition file.
+         * @return true if parsing and node creation were successful.
          */
         bool load(const std::string& json_path);
 
         /**
-         * @brief Run the pipeline.
+         * @brief Run the pipeline loop.
          * Blocks until the pipeline finishes (EOS) or stop() is called.
          */
         void run();
 
         /**
-         * @brief Stop execution.
+         * @brief Signal the pipeline to stop execution.
          */
         void stop();
 
-        // Register custom nodes dynamically
+        /**
+         * @brief Register a custom node type dynamically.
+         * Used by internal modules to register their wrappers (e.g., DetectorNode).
+         */
         static void register_node(const std::string& type_name, NodeCreator creator);
 
     private:

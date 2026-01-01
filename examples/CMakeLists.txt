@@ -24,6 +24,7 @@ target_link_libraries(wildlife_tracker PRIVATE
         xinfer_preproc
         xinfer_backends
         xinfer_core
+        xinfer_flow
 
         # External
         ${OpenCV_LIBS}

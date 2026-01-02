@@ -37,3 +37,16 @@ target_link_libraries(wildlife_tracker PRIVATE
         $<$<TARGET_PROPERTY:xinfer_core,XINFER_ENABLE_RKNN>:xinfer_rknn>
         # ... and so on for all platforms
 )
+
+# Telemetry Examples
+if(XINFER_BUILD_TELEMETRY)
+    add_executable(system_health 09_telemetry/system_health.cpp)
+    target_link_libraries(system_health PRIVATE xinfer_core xinfer_telemetry)
+
+    add_executable(detect_drift 09_telemetry/detect_data_drift.cpp)
+    target_link_libraries(detect_drift PRIVATE xinfer_core xinfer_telemetry)
+
+    # Note: Remote logging requires networking libs (httplib) linked in xinfer_telemetry
+    add_executable(remote_logging 09_telemetry/remote_logging.cpp)
+    target_link_libraries(remote_logging PRIVATE xinfer_core xinfer_telemetry)
+endif()

@@ -20,15 +20,6 @@ struct ModelServer::Impl {
     std::unique_ptr<ModelRepository> repo;
 
 
-
-
-
-
-
-
-
-
-
     Impl(const ServerConfig& cfg) : config(cfg) {
         repo = std::make_unique<ModelRepository>(config.model_repo_path);
 

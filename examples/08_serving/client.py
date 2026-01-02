@@ -47,29 +47,29 @@ def main():
     input_data, shape = preprocess_image(IMAGE_PATH)
 
     payload = {
-    "input": input_data,
-    "shape": shape
-}
+        "input": input_data,
+        "shape": shape
+    }
 
-# Send Request
-print(f"Sending request to model '{MODEL_NAME}'...")
-start = time.time()
+    # Send Request
+    print(f"Sending request to model '{MODEL_NAME}'...")
+    start = time.time()
 
-response = requests.post(
-    f"{SERVER_URL}/v1/models/{MODEL_NAME}:predict",
-    json=payload
-)
+    response = requests.post(
+        f"{SERVER_URL}/v1/models/{MODEL_NAME}:predict",
+        json=payload
+    )
 
-end = time.time()
+    end = time.time()
 
-if response.status_code == 200:
-    result = response.json()
-    print(f"Success!")
-    print(f"Inference Time (Server-side): {result['inference_time_ms']} ms")
-    print(f"Total Round Trip: {(end-start)*1000:.2f} ms")
-    print(f"Output size: {len(result['output'])} floats")
-else:
-    print(f"Error: {response.text}")
+    if response.status_code == 200:
+        result = response.json()
+        print(f"Success!")
+        print(f"Inference Time (Server-side): {result['inference_time_ms']} ms")
+        print(f"Total Round Trip: {(end-start)*1000:.2f} ms")
+        print(f"Output size: {len(result['output'])} floats")
+    else:
+        print(f"Error: {response.text}")
 
 if __name__ == "__main__":
-main()
+    main()

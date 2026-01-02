@@ -279,6 +279,7 @@ This runs in a **Background Thread**, invisible to the main application logic, e
                                         [ Exporter (File/HTTP) ]
 ```
 
+
 ### How to choose which one to use?
 
 1.  **Building a Desktop App (GUI)?** Use **Core + Zoo + UI**. You write C++ code to call the Zoo directly.

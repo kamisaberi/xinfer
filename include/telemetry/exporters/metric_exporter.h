@@ -1,8 +1,26 @@
-//
-// Created by kami on 1/2/2026.
-//
+#pragma once
+#include <xinfer/telemetry/exporter.h>
+#include <memory>
+#include <string>
 
-#ifndef XINFER_METRIC_EXPORTER_H
-#define XINFER_METRIC_EXPORTER_H
+namespace xinfer::telemetry {
 
-#endif //XINFER_METRIC_EXPORTER_H
+    class HttpMetricExporter : public IMetricExporter {
+    public:
+        /**
+         * @param host Target host (e.g. "localhost" or "monitoring.internal")
+         * @param port Target port (e.g. 9091)
+         * @param endpoint URL path (e.g. "/metrics/job/xinfer")
+         */
+        HttpMetricExporter(const std::string& host, int port, const std::string& endpoint);
+        ~HttpMetricExporter() override;
+
+        void export_metrics(const SystemMetrics& metrics) override;
+        void export_inference(const InferenceMetrics& metrics) override;
+
+    private:
+        struct Impl;
+        std::unique_ptr<Impl> pimpl_;
+    };
+
+}

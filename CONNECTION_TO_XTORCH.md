@@ -259,8 +259,3 @@ Now you have a circular ecosystem:
 *   **xInfer** runs models.
 *   **xInfer** can hand data back to **xTorch** to improve models on the fly.
 
-
-
-
-
-

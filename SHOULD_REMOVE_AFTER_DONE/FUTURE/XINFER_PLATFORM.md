@@ -251,3 +251,10 @@ If you want to emphasize the **Industrial/Hardware** control:
 👉 **`SiliconFlow`**
 
 **Which "Vibe" feels right for the company you want to build?**
+
+
+
+---
+
+# i wonder do we have create repository that only have parts that xinfer desnt have for platform or we want to create new xinfer as platform ?
+

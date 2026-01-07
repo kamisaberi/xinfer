@@ -346,3 +346,8 @@ If you break the GUI code in `xFabric`, it does not break the `xInfer` build for
 4.  **Update** `xFabric/CMakeLists.txt` to fetch `xInfer`.
 
 This is the architecture of a mature technology company.
+
+---
+
+
+# first of all give me modules that you mentioned before and i should add to xfabric 

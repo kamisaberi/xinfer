@@ -78,3 +78,7 @@ You have the nodes (`backends`) and the logic (`zoo`). You are missing the **Bra
 "Blackbox and Aegis Sky are just *applications*. **xInfer** is the **Platform** that makes the hardware invisible. It turns a chaotic fleet of FPGAs, NPUs, and GPUs into a single, cohesive supercomputer."
 
 
+---
+
+# do you think is it worth to try as stratup ?
+

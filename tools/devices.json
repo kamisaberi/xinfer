@@ -1,25 +1,109 @@
 {
   "devices": [
     {
-      "name": "jetson_orin_1",
-      "ip": "192.168.1.50",
-      "user": "nvidia",
+      "name": "dev_server_gpu",
+      "ip": "192.168.1.100",
+      "user": "developer",
       "target": "nv-trt",
-      "path": "/home/nvidia/xinfer_apps/"
+      "path": "/home/developer/deploy/nvidia/"
     },
     {
-      "name": "rockchip_cam_5",
-      "ip": "192.168.1.55",
-      "user": "rock",
-      "target": "rockchip-rknn",
-      "path": "/home/rock/apps/"
+      "name": "intel_nuc_1",
+      "ip": "192.168.1.101",
+      "user": "user",
+      "target": "intel-ov",
+      "path": "/home/user/deploy/openvino/"
     },
     {
-      "name": "kria_fpga",
-      "ip": "192.168.1.60",
+      "name": "ryzen_laptop_win",
+      "ip": "192.168.1.102",
+      "user": "admin",
+      "target": "amd-ryzen-ai",
+      "path": "C:\\Users\\admin\\xinfer_deploy\\"
+    },
+    {
+      "name": "macbook_m3",
+      "ip": "192.168.1.103",
+      "user": "apple_dev",
+      "target": "apple-coreml",
+      "path": "/Users/apple_dev/deploy/"
+    },
+    {
+      "name": "kria_som_aegis",
+      "ip": "192.168.1.110",
       "user": "petalinux",
       "target": "amd-vitis",
       "path": "/home/petalinux/apps/"
+    },
+    {
+      "name": "agilex_fpga_card",
+      "ip": "192.168.1.111",
+      "user": "fpga_user",
+      "target": "intel-fpga",
+      "path": "/home/fpga_user/deploy/"
+    },
+    {
+      "name": "polarfire_soc_secure",
+      "ip": "192.168.1.112",
+      "user": "microchip",
+      "target": "microchip-vb",
+      "path": "/home/microchip/apps/"
+    },
+    {
+      "name": "lattice_gateway",
+      "ip": "192.168.1.113",
+      "user": "root",
+      "target": "lattice-sensai",
+      "path": "/root/deploy/"
+    },
+    {
+      "name": "snapdragon_drone_1",
+      "ip": "192.168.1.120",
+      "user": "root",
+      "target": "qcom-qnn",
+      "path": "/data/apps/"
+    },
+    {
+      "name": "rockchip_siem_box",
+      "ip": "192.168.1.121",
+      "user": "rock",
+      "target": "rockchip-rknn",
+      "path": "/home/rock/xinfer/"
+    },
+    {
+      "name": "mediatek_genio_evk",
+      "ip": "192.168.1.122",
+      "user": "user",
+      "target": "mediatek-np",
+      "path": "/home/user/apps/"
+    },
+    {
+      "name": "samsung_phone_test",
+      "ip": "192.168.1.123",
+      "user": "shell",
+      "target": "samsung-exynos",
+      "path": "/data/local/tmp/"
+    },
+    {
+      "name": "hailo_rpi_kit",
+      "ip": "192.168.1.130",
+      "user": "pi",
+      "target": "hailo-rt",
+      "path": "/home/pi/deploy/"
+    },
+    {
+      "name": "ambarella_cam_1",
+      "ip": "192.168.1.131",
+      "user": "root",
+      "target": "ambarella-cv",
+      "path": "/tmp/apps/"
+    },
+    {
+      "name": "coral_dev_board",
+      "ip": "192.168.1.132",
+      "user": "mendel",
+      "target": "google-tpu",
+      "path": "/home/mendel/deploy/"
     }
   ]
 }

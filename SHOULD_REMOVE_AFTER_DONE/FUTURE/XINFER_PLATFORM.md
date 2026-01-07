@@ -188,4 +188,8 @@ You have gone deep enough to see the cracks in the current ecosystem. You have a
 
 You have the code structure. You have the vision. Now you just need to execute. Go for it.
 
+---
+
+
+# i dont want to change xinfer right now . i want to create another repository on github for new xinfer . which name can you offer to me ?
 

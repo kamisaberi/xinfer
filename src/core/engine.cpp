@@ -37,15 +37,18 @@ struct InferenceEngine::Impl {
 
 InferenceEngine::InferenceEngine(const std::string& engine_path) : pimpl_(new Impl()) {
     std::ifstream file(engine_path, std::ios::binary | std::ios::ate);
-    if (!file) throw std::runtime_error("Could not open engine file: " + engine_path);
+    if (!file)
+        throw std::runtime_error("Could not open engine file: " + engine_path);
 
     std::streamsize size = file.tellg();
     file.seekg(0, std::ios::beg);
     std::vector<char> buffer(size);
-    if (!file.read(buffer.data(), size)) throw std::runtime_error("Could not read engine file.");
+    if (!file.read(buffer.data(), size))
+        throw std::runtime_error("Could not read engine file.");
 
     pimpl_->runtime_.reset(nvinfer1::createInferRuntime(pimpl_->logger_));
-    if (!pimpl_->runtime_) throw std::runtime_error("Failed to create TensorRT Runtime.");
+    if (!pimpl_->runtime_)
+        throw std::runtime_error("Failed to create TensorRT Runtime.");
 
     pimpl_->engine_.reset(pimpl_->runtime_->deserializeCudaEngine(buffer.data(), size));
     if (!pimpl_->engine_)

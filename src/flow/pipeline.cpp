@@ -11,6 +11,10 @@
 
 using json = nlohmann::json;
 
+
+
+
+
 namespace xinfer::flow {
 
 // =================================================================================
@@ -111,10 +115,18 @@ struct Pipeline::Impl {
 Pipeline::Pipeline() : pimpl_(std::make_unique<Impl>()) {}
 Pipeline::~Pipeline() = default;
 
+
+
+
+
 bool Pipeline::load(const std::string& json_path) {
     std::ifstream f(json_path);
     if (!f.is_open()) {
         XINFER_LOG_ERROR("Could not open pipeline config: " + json_path);
+
+
+
+
         return false;
     }
 

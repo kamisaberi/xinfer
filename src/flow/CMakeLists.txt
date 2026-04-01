@@ -7,6 +7,10 @@ list(APPEND FLOW_SRCS
         nodes/source_nodes.cpp
         nodes/infer_nodes.cpp
         nodes/sink_nodes.cpp
+
+
+
+
 )
 
 add_library(xinfer_flow OBJECT ${FLOW_SRCS})

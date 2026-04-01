@@ -3,7 +3,9 @@
 #include <QDialog>
 #include <QSettings>
 
-namespace Ui { class SettingsDialog; }
+namespace Ui {
+    class SettingsDialog;
+}
 
 class SettingsDialog : public QDialog {
     Q_OBJECT

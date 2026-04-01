@@ -17,9 +17,20 @@ public:
     // Returns the struct populated from the UI fields
     xinfer::ui::core::DeviceInfo getDeviceInfo() const;
 
+
+
+
+
+
+
 private slots:
     void on_btnSave_clicked();
     void on_btnCancel_clicked();
+
+
+
+
+
 
 private:
     Ui::DeviceEditorDialog *ui;

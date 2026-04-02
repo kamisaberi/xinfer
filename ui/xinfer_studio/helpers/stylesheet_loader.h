@@ -13,6 +13,13 @@ namespace xinfer::ui::helpers {
      * @param app Reference to the main QApplication instance.
      * @param resourcePath Path to the .qss file (e.g., ":/styles/dark_theme.qss").
      */
+
+
+
+
+
+
+
     void apply_theme(QApplication& app, const QString& resourcePath);
 
 } // namespace xinfer::ui::helpers

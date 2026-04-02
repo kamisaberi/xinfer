@@ -23,8 +23,13 @@ namespace xinfer::ui::models {
         // Get the full struct for a specific row
         core::DeviceInfo getDevice(int row) const;
 
+
+
+
+
+
     private:
         core::DeviceManager* m_manager;
     };
 
-} // namespace xinfer::ui::models
+}

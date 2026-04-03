@@ -17,10 +17,15 @@ int main(int argc, char *argv[])
     app.setOrganizationName("xInfer");
     app.setApplicationVersion("1.0.0");
 
+
+
+
+
     // Load Dark Theme
     // Ensure resources.qrc is added to CMakeLists.txt
     xinfer::ui::helpers::apply_theme(app, ":/styles/dark_theme.qss");
 
+    //Main Window
     MainWindow w;
     w.show();
 

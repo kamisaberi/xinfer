@@ -102,13 +102,18 @@ if(XINFER_BUILD_SERVING)
 endif()
 
 if(XINFER_BUILD_FLOW)
+
+
     message(STATUS "[xInfer] Enabling Flow Module")
     add_subdirectory(src/flow)
+
 endif()
 
 if(XINFER_BUILD_TELEMETRY)
+
     message(STATUS "[xInfer] Enabling Telemetry Module")
     add_subdirectory(src/telemetry)
+
 endif()
 
 # ==============================================================================
@@ -129,7 +134,6 @@ target_link_libraries(xinfer INTERFACE
     xinfer_preproc
     xinfer_postproc
     xinfer_zoo
-    
     # Propagate public dependencies
     ${OpenCV_LIBS}
     ${CURL_LIBRARIES}

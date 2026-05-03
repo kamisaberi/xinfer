@@ -10,4 +10,9 @@ add_library(xinfer_core OBJECT ${CORE_SOURCES})
 # Expose its public headers to any target that links against it
 target_include_directories(xinfer_core PUBLIC
     ${PROJECT_SOURCE_DIR}/include
+
+
+
+
+
 )

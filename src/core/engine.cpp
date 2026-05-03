@@ -16,6 +16,10 @@ class Logger : public nvinfer1::ILogger {
 
 namespace xinfer::core {
 
+
+
+
+
 struct InferenceEngine::Impl {
     Logger logger_;
     std::unique_ptr<nvinfer1::IRuntime> runtime_;
@@ -44,10 +48,12 @@ InferenceEngine::InferenceEngine(const std::string& engine_path) : pimpl_(new Im
     if (!pimpl_->runtime_) throw std::runtime_error("Failed to create TensorRT Runtime.");
 
     pimpl_->engine_.reset(pimpl_->runtime_->deserializeCudaEngine(buffer.data(), size));
-    if (!pimpl_->engine_) throw std::runtime_error("Failed to deserialize TensorRT Engine.");
+    if (!pimpl_->engine_)
+        throw std::runtime_error("Failed to deserialize TensorRT Engine.");
 
     pimpl_->context_.reset(pimpl_->engine_->createExecutionContext());
-    if (!pimpl_->context_) throw std::runtime_error("Failed to create TensorRT Execution Context.");
+    if (!pimpl_->context_)
+        throw std::runtime_error("Failed to create TensorRT Execution Context.");
 
     // Allocate memory for bindings (pointers to GPU buffers)
     pimpl_->bindings_.resize(pimpl_->engine_->getNbBindings());

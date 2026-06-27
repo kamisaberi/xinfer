@@ -153,3 +153,11 @@ bool VitisCompiler::compile(const CompileConfig& config) {
 *   **Aegis Sky:** You can use the CLI to quickly compare the performance of different FPGA architectures (DPUs) by simply changing a flag in the command line and checking the resulting `.xmodel` latency.
 
 **Next Step:** I recommend implementing the `CompilerFactory` and the `CompileConfig` struct first. This creates the "skeleton" of the new CLI. Would you like to see the code for the **`CompilerFactory`**?
+
+
+
+
+
+
+
+

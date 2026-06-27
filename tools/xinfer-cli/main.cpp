@@ -89,7 +89,7 @@ void handle_compile(const cxxopts::ParseResult& args) {
 
     // 3. Validate Environment
     if (!driver->validate_environment()) {
-        XINFER_LOG_FATAL("Environment validation failed. Run 'xinfer-doctor' for details.");
+        XINFER_LOG_FATAL("Environment validation failed. Run 'xinfer-doctor.py' for details.");
         return;
     }
 
